@@ -1,0 +1,27 @@
+# Source files
+extension/src/**
+webview/src/**
+webview/node_modules/**
+
+# Build tools
+extension/tsconfig.json
+webview/tsconfig.json
+webview/vite.config.ts
+webview/tailwind.config.js
+webview/postcss.config.js
+
+# Development files
+.eslintrc.json
+.tool-versions
+.claude/**
+.vscode/**
+yarn.lock
+package-lock.json
+webview/package-lock.json
+
+# Git
+.gitignore
+.git/**
+
+# Documentation
+README.md
