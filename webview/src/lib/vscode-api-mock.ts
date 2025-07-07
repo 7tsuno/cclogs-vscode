@@ -40,17 +40,17 @@ const mockConversations: Conversation[] = [
   {
     conversationId: "conv-123",
     fileName: "20240107_123456.jsonl",
-    startTime: new Date(Date.now() - 3600000).toISOString(),
+    startTime: new Date(Date.now() - 10000000).toISOString(),
     endTime: new Date().toISOString(),
     entriesCount: 10,
     preview: [
       {
-        timestamp: new Date(Date.now() - 3600000).toISOString(),
+        timestamp: new Date(Date.now() - 10000000).toISOString(),
         type: "user",
-        content: "Claude Code Logsの使い方を教えてください。",
+        content: "Claude Code Logsの使い方を教えてください。 hoge",
       },
       {
-        timestamp: new Date(Date.now() - 3500000).toISOString(),
+        timestamp: new Date(Date.now() - 12000000).toISOString(),
         type: "assistant",
         content: "Claude Code Logsは、VS Code拡張機能として動作します...",
       },

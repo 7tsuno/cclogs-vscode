@@ -70,7 +70,6 @@ export default function HomePage() {
   return (
     <div className="container mx-auto p-6">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold">Claude Code Logs</h1>
         <p className="text-muted-foreground mt-2">プロジェクト一覧</p>
       </div>
 

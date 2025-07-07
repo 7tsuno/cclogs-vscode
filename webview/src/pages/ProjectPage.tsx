@@ -13,12 +13,24 @@ import { ScrollArea } from "../components/ui/scroll-area";
 import { Button } from "../components/ui/button";
 import { ChevronLeft } from "lucide-react";
 import { api } from "../lib/api";
+import {
+  AdvancedSearchBar,
+  SearchFilters,
+} from "../components/AdvancedSearchBar";
 
 export default function ProjectPage() {
   const params = useParams<{ projectId: string }>();
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [filteredConversations, setFilteredConversations] = useState<
+    Conversation[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchFilters, setSearchFilters] = useState<SearchFilters>({
+    content: "",
+    dateFrom: "",
+    dateTo: "",
+  });
 
   useEffect(() => {
     if (params.projectId) {
@@ -30,6 +42,7 @@ export default function ProjectPage() {
     try {
       const data = await api.getProjectLogs(projectId);
       setConversations(data || []);
+      setFilteredConversations(data || []);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "不明なエラーが発生しました"
@@ -37,6 +50,53 @@ export default function ProjectPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSearch = (filters: SearchFilters) => {
+    setSearchFilters(filters);
+
+    // フィルターが全て空の場合は全件表示
+    if (!filters.content && !filters.dateFrom && !filters.dateTo) {
+      setFilteredConversations(conversations);
+      return;
+    }
+
+    const filtered = conversations.filter((conv) => {
+      // 内容でフィルタリング
+      if (filters.content) {
+        const lowerQuery = filters.content.toLowerCase();
+        const previewText = getPreviewText(conv.preview).toLowerCase();
+        if (!previewText.includes(lowerQuery)) {
+          return false;
+        }
+      }
+
+      // 日付範囲でフィルタリング
+      if (filters.dateFrom || filters.dateTo) {
+        const convStartDate = new Date(conv.startTime);
+        const convEndDate = new Date(conv.endTime);
+
+        if (filters.dateFrom) {
+          const fromDate = new Date(filters.dateFrom);
+          fromDate.setHours(0, 0, 0, 0);
+          if (convEndDate < fromDate) {
+            return false;
+          }
+        }
+
+        if (filters.dateTo) {
+          const toDate = new Date(filters.dateTo);
+          toDate.setHours(23, 59, 59, 999);
+          if (convStartDate > toDate) {
+            return false;
+          }
+        }
+      }
+
+      return true;
+    });
+
+    setFilteredConversations(filtered);
   };
 
   const formatDate = (timestamp: string) => {
@@ -101,13 +161,26 @@ export default function ProjectPage() {
             プロジェクト一覧に戻る
           </Button>
         </Link>
-        <h1 className="text-3xl font-bold">{projectName}</h1>
+        <h1 className="text-md font-bold">{projectName}</h1>
         <p className="text-muted-foreground mt-2">会話履歴</p>
+        <div className="mt-4">
+          <AdvancedSearchBar
+            onSearch={handleSearch}
+            defaultFilters={searchFilters}
+          />
+        </div>
+        {(searchFilters.content ||
+          searchFilters.dateFrom ||
+          searchFilters.dateTo) && (
+          <p className="text-sm text-muted-foreground mt-2">
+            {filteredConversations.length} 件の結果が見つかりました
+          </p>
+        )}
       </div>
 
       <ScrollArea className="h-[calc(100vh-250px)]">
         <div className="space-y-4 pr-4">
-          {conversations.map((conversation) => (
+          {filteredConversations.map((conversation) => (
             <Link
               key={conversation.conversationId}
               to={`/project/${params.projectId}/conversation/${conversation.conversationId}`}

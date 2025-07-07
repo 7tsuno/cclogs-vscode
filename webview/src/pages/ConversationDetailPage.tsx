@@ -86,20 +86,6 @@ export default function ConversationDetailPage() {
     }
   };
 
-  const handleCopyResumeCommand = () => {
-    const command = `claude --resume ${params.id}`;
-    navigator.clipboard
-      .writeText(command)
-      .then(() => {
-        setNotificationMessage("コマンドをクリップボードにコピーしました");
-        setShowCopyNotification(true);
-        setTimeout(() => setShowCopyNotification(false), 3000);
-      })
-      .catch(() => {
-        console.error("Failed to copy to clipboard");
-      });
-  };
-
   const handleExecuteInTerminal = async () => {
     const command = `claude --resume ${params.id}`;
     try {
@@ -292,20 +278,21 @@ export default function ConversationDetailPage() {
     <div className="container mx-auto p-6">
       {/* カスタム通知 */}
       {showCopyNotification && (
-        <div 
+        <div
           className="fixed top-4 right-4 z-50 rounded-lg shadow-lg p-4 animate-in slide-in-from-top-2 fade-in duration-200"
           style={{
-            backgroundColor: 'var(--vscode-notifications-background)',
-            border: '1px solid var(--vscode-notifications-border)',
-            color: 'var(--vscode-notifications-foreground)'
+            backgroundColor: "var(--vscode-notifications-background)",
+            border: "1px solid var(--vscode-notifications-border)",
+            color: "var(--vscode-notifications-foreground)",
           }}
         >
           <div className="flex items-center gap-2">
-            <div 
+            <div
               className="rounded-full p-1"
               style={{
-                backgroundColor: 'var(--vscode-notificationsInfoIcon-foreground)',
-                color: 'var(--vscode-notifications-background)'
+                backgroundColor:
+                  "var(--vscode-notificationsInfoIcon-foreground)",
+                color: "var(--vscode-notifications-background)",
               }}
             >
               <svg
@@ -336,7 +323,7 @@ export default function ConversationDetailPage() {
                 会話一覧に戻る
               </Button>
             </Link>
-            <h1 className="text-lg font-bold font-mono">
+            <h1 className="text-sm font-bold font-mono">
               {conversation.conversationId}
             </h1>
           </div>
@@ -350,15 +337,6 @@ export default function ConversationDetailPage() {
               <Terminal className="h-3 w-3 mr-1" />
               ターミナルで再開
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleCopyResumeCommand}
-              title="クリップボードにコピー"
-            >
-              <Copy className="h-3 w-3" />
-            </Button>
-            <Badge>{conversation.entries.length} エントリ</Badge>
           </div>
         </div>
         <p className="text-sm text-muted-foreground">
@@ -370,7 +348,7 @@ export default function ConversationDetailPage() {
       <Separator className="mb-4" />
 
       <div className="h-[calc(100vh-180px)] overflow-y-auto">
-        <div className="space-y-4 px-4 pb-4">
+        <div className="space-y-2 px-2 pb-2">
           {conversation.entries.map((entry) => {
             const isRight = isRightAligned(entry.type);
             return (
@@ -379,7 +357,7 @@ export default function ConversationDetailPage() {
                 className={`flex ${isRight ? "justify-end" : "justify-start"}`}
               >
                 <div
-                  className={`flex gap-3 max-w-[70%] md:max-w-[75%] lg:max-w-[80%] ${
+                  className={`flex ${
                     isRight ? "flex-row-reverse" : "flex-row"
                   }`}
                 >
