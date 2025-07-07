@@ -29,8 +29,13 @@ jobs:
       - name: Update version in package.json
         if: github.event_name == 'workflow_dispatch'
         run: |
-          npm version ${{ github.event.inputs.version }} --no-git-tag-version
-          cd webview && npm version ${{ github.event.inputs.version }} --no-git-tag-version
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          if [ "$CURRENT_VERSION" != "${{ github.event.inputs.version }}" ]; then
+            npm version ${{ github.event.inputs.version }} --no-git-tag-version
+            cd webview && npm version ${{ github.event.inputs.version }} --no-git-tag-version
+          else
+            echo "Version is already ${{ github.event.inputs.version }}, skipping version update"
+          fi
           
       - name: Install dependencies
         run: |
