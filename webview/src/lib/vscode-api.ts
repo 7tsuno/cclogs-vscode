@@ -118,6 +118,24 @@ class VSCodeAPI {
       vscode.postMessage({ command: 'executeInTerminal', commandText: command });
     });
   }
+
+  async searchLogs(projectId: string, filters: any): Promise<Conversation[]> {
+    return new Promise((resolve, reject) => {
+      if (!vscode) {
+        reject(new Error('VS Code API not available'));
+        return;
+      }
+      this.messageHandlers.set('searchLogsResponse', (data) => {
+        this.messageHandlers.delete('searchLogsResponse');
+        if (data.error) {
+          reject(new Error(data.error));
+        } else {
+          resolve(data.conversations || []);
+        }
+      });
+      vscode.postMessage({ command: 'searchLogs', projectId, filters });
+    });
+  }
 }
 
 export const api = new VSCodeAPI();

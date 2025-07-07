@@ -52,7 +52,7 @@ const mockConversations: Conversation[] = [
       {
         timestamp: new Date(Date.now() - 12000000).toISOString(),
         type: "assistant",
-        content: "Claude Code Logsは、VS Code拡張機能として動作します...",
+        content: "Claude Code Logsは、VS Code拡張機能として動作します... fuga",
       },
     ],
   },
@@ -119,6 +119,20 @@ export class MockVSCodeAPI {
       success: true,
       message: "モック: ターミナルコマンドを実行しました",
     };
+  }
+
+  async searchLogs(projectId: string, filters: any): Promise<Conversation[]> {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    // モックデータをフィルタリング
+    return mockConversations.filter(conv => {
+      if (filters.content) {
+        const hasContent = conv.preview.some(p => 
+          p.content.toLowerCase().includes(filters.content.toLowerCase())
+        );
+        if (!hasContent) return false;
+      }
+      return true;
+    });
   }
 }
 

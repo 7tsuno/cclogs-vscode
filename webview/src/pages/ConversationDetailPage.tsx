@@ -361,7 +361,7 @@ export default function ConversationDetailPage() {
                 >
                   {!isRight && (
                     <div className="flex items-center gap-2">
-                      <div className="w-5 h-5 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center flex-shrink-0">
+                      <div className="w-10 h-10 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center">
                         {getIcon(entry.type)}
                       </div>
                       <span>{formatTimestamp(entry.timestamp)}</span>
@@ -380,7 +380,7 @@ export default function ConversationDetailPage() {
                         </span>
                       )}
                       <span>{formatTimestamp(entry.timestamp)}</span>
-                      <div className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0">
+                      <div className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
                         {getIcon(entry.type)}
                       </div>
                     </div>

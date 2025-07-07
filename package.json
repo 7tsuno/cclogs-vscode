@@ -2,12 +2,14 @@
   "name": "claude-code-logs",
   "displayName": "Claude Code Logs Viewer",
   "description": "Claude Codeの会話ログを見やすく表示するVS Code拡張",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "7tsuno",
   "engines": {
     "vscode": "^1.74.0"
   },
-  "categories": ["Other"],
+  "categories": [
+    "Other"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/7tsuno/cclogs-vscode.git"
@@ -28,7 +30,7 @@
     "compile:extension": "tsc -p ./extension",
     "build:webview": "cd webview && npm run build",
     "watch": "tsc -watch -p ./extension",
-    "dev:webview": "cd webview && vite",
+    "dev:webview": "cd webview && npm run dev",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint extension/src --ext ts",
     "test": "node ./out/test/runTest.js"

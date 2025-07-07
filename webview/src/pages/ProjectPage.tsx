@@ -52,7 +52,7 @@ export default function ProjectPage() {
     }
   };
 
-  const handleSearch = (filters: SearchFilters) => {
+  const handleSearch = async (filters: SearchFilters) => {
     setSearchFilters(filters);
 
     // フィルターが全て空の場合は全件表示
@@ -61,42 +61,20 @@ export default function ProjectPage() {
       return;
     }
 
-    const filtered = conversations.filter((conv) => {
-      // 内容でフィルタリング
-      if (filters.content) {
-        const lowerQuery = filters.content.toLowerCase();
-        const previewText = getPreviewText(conv.preview).toLowerCase();
-        if (!previewText.includes(lowerQuery)) {
-          return false;
-        }
+    // バックエンドで検索を実行
+    if (params.projectId) {
+      setLoading(true);
+      try {
+        const searchResults = await api.searchLogs(params.projectId, filters);
+        setFilteredConversations(searchResults);
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "検索中にエラーが発生しました"
+        );
+      } finally {
+        setLoading(false);
       }
-
-      // 日付範囲でフィルタリング
-      if (filters.dateFrom || filters.dateTo) {
-        const convStartDate = new Date(conv.startTime);
-        const convEndDate = new Date(conv.endTime);
-
-        if (filters.dateFrom) {
-          const fromDate = new Date(filters.dateFrom);
-          fromDate.setHours(0, 0, 0, 0);
-          if (convEndDate < fromDate) {
-            return false;
-          }
-        }
-
-        if (filters.dateTo) {
-          const toDate = new Date(filters.dateTo);
-          toDate.setHours(23, 59, 59, 999);
-          if (convStartDate > toDate) {
-            return false;
-          }
-        }
-      }
-
-      return true;
-    });
-
-    setFilteredConversations(filtered);
+    }
   };
 
   const formatDate = (timestamp: string) => {
