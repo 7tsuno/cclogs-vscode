@@ -37,4 +37,5 @@ yarn-error.log*
 *.tmp
 *.temp
 
-.claude/settings.local.json
+# Claude settings
+.claude/
