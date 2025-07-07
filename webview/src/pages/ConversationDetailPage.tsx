@@ -348,58 +348,69 @@ export default function ConversationDetailPage() {
       <Separator className="mb-4" />
 
       <div className="h-[calc(100vh-180px)] overflow-y-auto">
-        <div className="space-y-2 px-2 pb-2">
+        <div className="space-y-4 px-4 pb-4">
           {conversation.entries.map((entry) => {
             const isRight = isRightAligned(entry.type);
             return (
-              <div
-                key={entry.id}
-                className={`flex ${isRight ? "justify-end" : "justify-start"}`}
-              >
+              <div key={entry.id} className="space-y-1">
+                {/* ヘッダー行（アイコン、日時、モデル名） */}
                 <div
-                  className={`flex ${
-                    isRight ? "flex-row-reverse" : "flex-row"
+                  className={`flex items-center gap-2 text-xs text-muted-foreground ${
+                    isRight ? "justify-end" : "justify-start"
                   }`}
                 >
-                  <div
-                    className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
-                      isRight
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-secondary text-secondary-foreground"
-                    }`}
-                  >
-                    {getIcon(entry.type)}
-                  </div>
-                  <div className="flex-1 min-w-0 space-y-2">
-                    <div
-                      className={`text-xs text-muted-foreground ${
-                        isRight ? "text-right" : "text-left"
-                      }`}
-                    >
-                      {formatTimestamp(entry.timestamp)}
-                    </div>
-                    {entry.type === "assistant" && entry.model && (
-                      <div className="text-xs text-muted-foreground">
-                        {entry.model}
+                  {!isRight && (
+                    <div className="flex items-center gap-2">
+                      <div className="w-5 h-5 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center flex-shrink-0">
+                        {getIcon(entry.type)}
                       </div>
-                    )}
-                    <Card
-                      className={`${
-                        isRight ? "bg-primary/5" : ""
-                      } w-full overflow-hidden`}
-                    >
-                      <CardContent>
-                        <div className="break-all">
-                          {renderContent(
-                            entry.content,
-                            entry.type,
-                            entry.metadata,
-                            entry.thinking
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
+                      <span>{formatTimestamp(entry.timestamp)}</span>
+                      {entry.type === "assistant" && entry.model && (
+                        <span className="text-muted-foreground/70">
+                          • {entry.model}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {isRight && (
+                    <div className="flex items-center gap-2">
+                      {entry.type === "assistant" && entry.model && (
+                        <span className="text-muted-foreground/70">
+                          {entry.model} •
+                        </span>
+                      )}
+                      <span>{formatTimestamp(entry.timestamp)}</span>
+                      <div className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0">
+                        {getIcon(entry.type)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* メッセージ内容 */}
+                <div
+                  className={`flex ${
+                    isRight ? "justify-end" : "justify-start"
+                  }`}
+                >
+                  <Card
+                    className={`${
+                      isRight
+                        ? "bg-primary/5 max-w-[85%]"
+                        : "bg-secondary/5 max-w-[85%]"
+                    } overflow-hidden py-3`}
+                  >
+                    <CardContent className="px-4">
+                      <div className="break-words">
+                        {renderContent(
+                          entry.content,
+                          entry.type,
+                          entry.metadata,
+                          entry.thinking
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
                 </div>
               </div>
             );

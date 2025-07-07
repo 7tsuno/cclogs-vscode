@@ -185,8 +185,8 @@ export default function ProjectPage() {
               key={conversation.conversationId}
               to={`/project/${params.projectId}/conversation/${conversation.conversationId}`}
             >
-              <Card className="hover:bg-accent transition-colors cursor-pointer mt-2">
-                <CardHeader>
+              <Card className="hover:bg-accent transition-colors cursor-pointer mt-2 py-4">
+                <CardHeader className="px-4">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-lg font-mono">
                       {conversation.conversationId}
