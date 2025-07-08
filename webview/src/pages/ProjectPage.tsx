@@ -11,12 +11,17 @@ import {
 import { Badge } from "../components/ui/badge";
 import { ScrollArea } from "../components/ui/scroll-area";
 import { Button } from "../components/ui/button";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, Search, ChevronDown, ChevronUp } from "lucide-react";
 import { api } from "../lib/api";
 import {
   AdvancedSearchBar,
   SearchFilters,
 } from "../components/AdvancedSearchBar";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "../components/ui/collapsible";
 
 export default function ProjectPage() {
   const params = useParams<{ projectId: string }>();
@@ -31,6 +36,7 @@ export default function ProjectPage() {
     dateFrom: "",
     dateTo: "",
   });
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   useEffect(() => {
     if (params.projectId) {
@@ -45,7 +51,7 @@ export default function ProjectPage() {
       setFilteredConversations(data || []);
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "不明なエラーが発生しました"
+        err instanceof Error ? err.message : "An unknown error occurred"
       );
     } finally {
       setLoading(false);
@@ -55,13 +61,13 @@ export default function ProjectPage() {
   const handleSearch = async (filters: SearchFilters) => {
     setSearchFilters(filters);
 
-    // フィルターが全て空の場合は全件表示
+    // Show all items if all filters are empty
     if (!filters.content && !filters.dateFrom && !filters.dateTo) {
       setFilteredConversations(conversations);
       return;
     }
 
-    // バックエンドで検索を実行
+    // Execute search on backend
     if (params.projectId) {
       setLoading(true);
       try {
@@ -69,7 +75,7 @@ export default function ProjectPage() {
         setFilteredConversations(searchResults);
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : "検索中にエラーが発生しました"
+          err instanceof Error ? err.message : "An error occurred during search"
         );
       } finally {
         setLoading(false);
@@ -80,7 +86,7 @@ export default function ProjectPage() {
   const formatDate = (timestamp: string) => {
     if (!timestamp) return "";
     const date = new Date(timestamp);
-    return date.toLocaleString("ja-JP", {
+    return date.toLocaleString("en-US", {
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
@@ -90,7 +96,7 @@ export default function ProjectPage() {
   };
 
   const getPreviewText = (preview: any[]): string => {
-    if (!preview || preview.length === 0) return "プレビューなし";
+    if (!preview || preview.length === 0) return "No preview";
     const userMessage = preview.find((p) => p.type === "user");
     if (userMessage && userMessage.content) {
       return (
@@ -105,14 +111,14 @@ export default function ProjectPage() {
         (firstContent.content.length > 100 ? "..." : "")
       );
     }
-    return "プレビューなし";
+    return "No preview";
   };
 
   if (loading) {
     return (
       <div className="container mx-auto p-6">
         <div className="flex items-center justify-center h-64">
-          <p className="text-muted-foreground">読み込み中...</p>
+          <p className="text-muted-foreground">Loading...</p>
         </div>
       </div>
     );
@@ -122,7 +128,7 @@ export default function ProjectPage() {
     return (
       <div className="container mx-auto p-6">
         <div className="flex items-center justify-center h-64">
-          <p className="text-destructive">エラー: {error}</p>
+          <p className="text-destructive">Error: {error}</p>
         </div>
       </div>
     );
@@ -132,26 +138,45 @@ export default function ProjectPage() {
 
   return (
     <div className="container mx-auto p-6">
-      <div className="mb-8">
+      <div className="mb-2">
         <Link to="/">
           <Button variant="ghost" size="sm" className="mb-4">
             <ChevronLeft className="h-4 w-4 mr-1" />
-            プロジェクト一覧に戻る
+            Back to projects
           </Button>
         </Link>
         <h1 className="text-md font-bold">{projectName}</h1>
-        <p className="text-muted-foreground mt-2">会話履歴</p>
-        <div className="mt-4">
-          <AdvancedSearchBar
-            onSearch={handleSearch}
-            defaultFilters={searchFilters}
-          />
-        </div>
+        <p className="text-muted-foreground mt-2">Conversation history</p>
+        <Collapsible
+          open={isSearchOpen}
+          onOpenChange={setIsSearchOpen}
+          className="mt-4"
+        >
+          <CollapsibleTrigger asChild>
+            <Button variant="outline" size="sm" className="mb-2">
+              <Search className="h-4 w-4 mr-2" />
+              Search
+              {isSearchOpen ? (
+                <ChevronUp className="h-4 w-4 ml-2" />
+              ) : (
+                <ChevronDown className="h-4 w-4 ml-2" />
+              )}
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="mt-2">
+              <AdvancedSearchBar
+                onSearch={handleSearch}
+                defaultFilters={searchFilters}
+              />
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
         {(searchFilters.content ||
           searchFilters.dateFrom ||
           searchFilters.dateTo) && (
           <p className="text-sm text-muted-foreground mt-2">
-            {filteredConversations.length} 件の結果が見つかりました
+            {filteredConversations.length} results found
           </p>
         )}
       </div>
@@ -170,7 +195,7 @@ export default function ProjectPage() {
                       {conversation.conversationId}
                     </CardTitle>
                     <Badge variant="secondary">
-                      {conversation.entriesCount} メッセージ
+                      {conversation.entriesCount} messages
                     </Badge>
                   </div>
                   <CardDescription>

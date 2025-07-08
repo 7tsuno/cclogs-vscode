@@ -42,3 +42,5 @@ yarn-error.log*
 
 # Development tools
 .tool-versions
+
+CLAUDE.md

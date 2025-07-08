@@ -28,7 +28,7 @@ export default function HomePage() {
       setProjects(data || []);
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "不明なエラーが発生しました"
+        err instanceof Error ? err.message : "An unknown error occurred"
       );
     } finally {
       setLoading(false);
@@ -36,9 +36,9 @@ export default function HomePage() {
   };
 
   const formatDate = (timestamp: string | null) => {
-    if (!timestamp) return "更新なし";
+    if (!timestamp) return "No updates";
     const date = new Date(timestamp);
-    return date.toLocaleString("ja-JP", {
+    return date.toLocaleString("en-US", {
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
@@ -51,7 +51,7 @@ export default function HomePage() {
     return (
       <div className="container mx-auto p-6">
         <div className="flex items-center justify-center h-64">
-          <p className="text-muted-foreground">読み込み中...</p>
+          <p className="text-muted-foreground">Loading...</p>
         </div>
       </div>
     );
@@ -61,7 +61,7 @@ export default function HomePage() {
     return (
       <div className="container mx-auto p-6">
         <div className="flex items-center justify-center h-64">
-          <p className="text-destructive">エラー: {error}</p>
+          <p className="text-destructive">Error: {error}</p>
         </div>
       </div>
     );
@@ -70,7 +70,7 @@ export default function HomePage() {
   return (
     <div className="container mx-auto p-6">
       <div className="mb-8">
-        <p className="text-muted-foreground mt-2">プロジェクト一覧</p>
+        <p className="text-muted-foreground mt-2">Project List</p>
       </div>
 
       <ScrollArea className="h-[calc(100vh-200px)]">
@@ -92,11 +92,11 @@ export default function HomePage() {
                   <div className="flex items-center gap-2">
                     <MessageSquare className="h-4 w-4 text-muted-foreground" />
                     <span className="text-sm text-muted-foreground">
-                      {project.conversationCount} 会話
+                      {project.conversationCount} conversations
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    最終更新: {formatDate(project.lastModified)}
+                    Last updated: {formatDate(project.lastModified)}
                   </p>
                 </CardContent>
               </Card>

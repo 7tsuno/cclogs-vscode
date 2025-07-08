@@ -45,14 +45,14 @@ export function AdvancedSearchBar({ onSearch, defaultFilters }: AdvancedSearchBa
       <div className="space-y-3">
         <div>
           <Label htmlFor="content-search" className="text-sm font-medium mb-1.5">
-            内容で検索
+            Search by content
           </Label>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               id="content-search"
               type="text"
-              placeholder="メッセージ内容を検索..."
+              placeholder="Search message content..."
               value={filters.content}
               onChange={(e) => setFilters({ ...filters, content: e.target.value })}
               onKeyDown={handleKeyDown}
@@ -64,7 +64,7 @@ export function AdvancedSearchBar({ onSearch, defaultFilters }: AdvancedSearchBa
         <div className="grid grid-cols-2 gap-3">
           <div>
             <Label htmlFor="date-from" className="text-sm font-medium mb-1.5">
-              開始日
+              Start date
             </Label>
             <div className="relative">
               <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -81,7 +81,7 @@ export function AdvancedSearchBar({ onSearch, defaultFilters }: AdvancedSearchBa
           
           <div>
             <Label htmlFor="date-to" className="text-sm font-medium mb-1.5">
-              終了日
+              End date
             </Label>
             <div className="relative">
               <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -101,12 +101,12 @@ export function AdvancedSearchBar({ onSearch, defaultFilters }: AdvancedSearchBa
       <div className="flex gap-2">
         <Button onClick={handleSearch} size="sm" className="flex-1">
           <Search className="h-4 w-4 mr-2" />
-          検索
+          Search
         </Button>
         {hasActiveFilters && (
           <Button onClick={handleClear} size="sm" variant="outline">
             <X className="h-4 w-4 mr-2" />
-            クリア
+            Clear
           </Button>
         )}
       </div>

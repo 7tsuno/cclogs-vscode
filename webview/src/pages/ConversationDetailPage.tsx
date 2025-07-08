@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import type { ConversationDetail } from "../lib/vscode-api";
 import {
@@ -26,9 +26,12 @@ import {
   Wrench,
   Copy,
   Terminal,
+  Search,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { api } from "../lib/api";
+import { FindInPageDialog } from "../components/FindInPageDialog";
+import { highlightText, countMatches, scrollToMatch } from "../lib/highlight";
 
 export default function ConversationDetailPage() {
   const params = useParams<{ projectId: string; id: string }>();
@@ -39,6 +42,11 @@ export default function ConversationDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [showCopyNotification, setShowCopyNotification] = useState(false);
   const [notificationMessage, setNotificationMessage] = useState("");
+  const [isFindOpen, setIsFindOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+  const [totalMatches, setTotalMatches] = useState(0);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (params.id && params.projectId) {
@@ -91,33 +99,223 @@ export default function ConversationDetailPage() {
     try {
       const result = await api.executeInTerminal(command);
       if (result.success) {
-        setNotificationMessage("コマンドをターミナルに送信しました");
+        setNotificationMessage("Command sent to terminal");
         setShowCopyNotification(true);
         setTimeout(() => setShowCopyNotification(false), 3000);
-      } else {
-        console.error("Failed to execute in terminal:", result.error);
       }
     } catch (err) {
-      console.error("Failed to execute in terminal:", err);
+      // エラーは静かに処理
     }
+  };
+
+  // 検索機能
+  const handleHighlight = useCallback(
+    (text: string): number => {
+      const isNewSearch = text !== searchTerm && text !== "";
+      setSearchTerm(text);
+
+      if (!text) {
+        // 検索クリア時は即座に処理
+        performHighlight(text, isNewSearch);
+      } else {
+        // 検索実行時はレンダリング後に処理
+        requestAnimationFrame(() => {
+          // さらに次のマイクロタスクで実行
+          setTimeout(() => {
+            performHighlight(text, isNewSearch);
+          }, 0);
+        });
+      }
+
+      return 0; // 一旦0を返す
+    },
+    [searchTerm]
+  );
+
+  const performHighlight = (text: string, isNewSearch: boolean) => {
+    if (!contentRef.current) return 0;
+
+    // すべての要素から既存のハイライトを削除
+    // まずmark要素を持つspan要素を探す
+    const allSpans = contentRef.current.querySelectorAll("span");
+    allSpans.forEach((span) => {
+      if (span.querySelector("mark")) {
+        const parent = span.parentNode;
+        if (parent) {
+          const textNode = document.createTextNode(span.textContent || "");
+          parent.replaceChild(textNode, span);
+        }
+      }
+    });
+
+    // 残っているmark要素も削除
+    const existingMarks = contentRef.current.querySelectorAll("mark");
+    existingMarks.forEach((mark) => {
+      const parent = mark.parentNode;
+      if (parent) {
+        parent.replaceChild(
+          document.createTextNode(mark.textContent || ""),
+          mark
+        );
+        parent.normalize();
+      }
+    });
+
+    if (!text) {
+      setTotalMatches(0);
+      setCurrentMatchIndex(-1);
+      return 0;
+    }
+
+    // 新しいハイライトを適用
+    let totalMatches = 0;
+    const walker = document.createTreeWalker(
+      contentRef.current,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: (node) => {
+          const parent = node.parentElement;
+          if (
+            parent &&
+            (parent.tagName === "SCRIPT" || parent.tagName === "STYLE")
+          ) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        },
+      }
+    );
+
+    const textNodes: Text[] = [];
+    let node;
+    while ((node = walker.nextNode())) {
+      textNodes.push(node as Text);
+    }
+
+    const regex = new RegExp(
+      `(${text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`,
+      "gi"
+    );
+
+    textNodes.forEach((textNode) => {
+      const matches = textNode.textContent?.match(regex);
+      if (matches && matches.length > 0) {
+        totalMatches += matches.length;
+        const span = document.createElement("span");
+        span.innerHTML = textNode.textContent!.replace(
+          regex,
+          '<mark class="bg-yellow-300 text-black">$1</mark>'
+        );
+        textNode.parentNode?.replaceChild(span, textNode);
+      }
+    });
+
+    setTotalMatches(totalMatches);
+    // 新しい検索の場合のみインデックスをリセット
+    if (isNewSearch) {
+      setCurrentMatchIndex(totalMatches > 0 ? 0 : -1);
+      // 初回スクロールはuseEffectに任せる（折りたたみ展開を待つため）
+    }
+    return totalMatches;
+  };
+
+  const handleNavigate = (direction: "next" | "prev") => {
+    if (totalMatches === 0) return;
+
+    let newIndex = currentMatchIndex;
+    if (direction === "next") {
+      newIndex = currentMatchIndex + 1;
+      if (newIndex >= totalMatches) {
+        newIndex = 0;
+      }
+    } else {
+      newIndex = currentMatchIndex - 1;
+      if (newIndex < 0) {
+        newIndex = totalMatches - 1;
+      }
+    }
+
+    setCurrentMatchIndex(newIndex);
+  };
+
+  // キーボードショートカット
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+        e.preventDefault();
+        setIsFindOpen(true);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // 現在のマッチ位置にスクロール
+  useEffect(() => {
+    if (contentRef.current && totalMatches > 0 && currentMatchIndex >= 0) {
+      // 折りたたみの展開が完了するのを待つ
+      const timeoutId = setTimeout(() => {
+        if (!contentRef.current) return;
+        const marks = contentRef.current.querySelectorAll("mark");
+        if (marks.length > currentMatchIndex) {
+          scrollToMatch(contentRef.current, currentMatchIndex);
+        }
+      }, 150); // 折りたたみの展開アニメーションを待つ（少し長めに）
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [currentMatchIndex, totalMatches, searchTerm]); // searchTermも依存配列に追加
+
+  // ハイライト付きコンテンツをレンダリング
+  const renderHighlightedContent = (text: string) => {
+    if (!searchTerm) return text;
+
+    const regex = new RegExp(
+      `(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`,
+      "gi"
+    );
+    const parts = text.split(regex);
+
+    return (
+      <>
+        {parts.map((part, index) => {
+          if (index % 2 === 1) {
+            // マッチした部分
+            return (
+              <mark key={index} className="bg-yellow-300 text-black">
+                {part}
+              </mark>
+            );
+          }
+          return part;
+        })}
+      </>
+    );
   };
 
   // ツール結果コンポーネント
   const ToolResultContent = ({ content }: { content: string }) => {
-    const [isOpen, setIsOpen] = useState(false);
+    const [isManuallyOpen, setIsManuallyOpen] = useState(false);
     const shouldCollapse = content.length > 200;
+
+    // 検索中は強制的に展開、そうでなければ手動開閉に従う
+    const isOpen = searchTerm ? true : isManuallyOpen;
+
+    const displayContent = isOpen ? content : content.slice(0, 200) + "...";
 
     if (shouldCollapse) {
       return (
         <div className="space-y-2">
           <div className="whitespace-pre-wrap font-mono text-xs bg-muted p-3 rounded-md overflow-x-auto break-all">
-            {isOpen ? content : content.slice(0, 200) + "..."}
+            {renderHighlightedContent(displayContent)}
           </div>
           <Button
             variant="ghost"
             size="sm"
             className="w-full justify-start p-0 h-auto font-normal"
-            onClick={() => setIsOpen(!isOpen)}
+            onClick={() => setIsManuallyOpen(!isManuallyOpen)}
+            disabled={!!searchTerm} // 検索中はボタンを無効化
           >
             {isOpen ? (
               <ChevronUp className="h-4 w-4 mr-1" />
@@ -125,7 +323,7 @@ export default function ConversationDetailPage() {
               <ChevronDown className="h-4 w-4 mr-1" />
             )}
             <span className="text-sm text-muted-foreground">
-              {isOpen ? "折りたたむ" : `続きを表示 (全${content.length}文字)`}
+              {isOpen ? "Collapse" : `Show more (${content.length} chars)`}
             </span>
           </Button>
         </div>
@@ -134,16 +332,19 @@ export default function ConversationDetailPage() {
 
     return (
       <div className="whitespace-pre-wrap font-mono text-xs bg-muted p-3 rounded-md overflow-x-auto break-all">
-        {content}
+        {renderHighlightedContent(content)}
       </div>
     );
   };
 
   // ツール呼び出しコンポーネント
   const ToolCallContent = ({ tool }: { tool: any }) => {
-    const [isOpen, setIsOpen] = useState(false);
+    const [isManuallyOpen, setIsManuallyOpen] = useState(false);
     const toolInput = JSON.stringify(tool.input || {}, null, 2);
     const shouldCollapse = toolInput.length > 200;
+
+    // 検索中は強制的に展開、そうでなければ手動開閉に従う
+    const isOpen = searchTerm ? true : isManuallyOpen;
 
     return (
       <Card className="bg-secondary/20">
@@ -162,7 +363,8 @@ export default function ConversationDetailPage() {
                 variant="ghost"
                 size="sm"
                 className="w-full justify-start p-0 h-auto font-normal"
-                onClick={() => setIsOpen(!isOpen)}
+                onClick={() => setIsManuallyOpen(!isManuallyOpen)}
+                disabled={!!searchTerm} // 検索中はボタンを無効化
               >
                 {isOpen ? (
                   <ChevronUp className="h-3 w-3 mr-1" />
@@ -171,8 +373,8 @@ export default function ConversationDetailPage() {
                 )}
                 <span className="text-xs text-muted-foreground">
                   {isOpen
-                    ? "折りたたむ"
-                    : `続きを表示 (全${toolInput.length}文字)`}
+                    ? "Collapse"
+                    : `Show more (${toolInput.length} chars)`}
                 </span>
               </Button>
             </div>
@@ -210,7 +412,7 @@ export default function ConversationDetailPage() {
           {toolUses.length > 0 && (
             <div className="space-y-2">
               <p className="text-sm font-medium text-muted-foreground">
-                ツール呼び出し:
+                Tool calls:
               </p>
               {toolUses.map((tool: any, index: number) => (
                 <ToolCallContent key={index} tool={tool} />
@@ -227,7 +429,7 @@ export default function ConversationDetailPage() {
           )}
           {!hasContent && toolUses.length === 0 && (
             <div className="text-muted-foreground text-sm italic">
-              コンテンツなし
+              No content
             </div>
           )}
         </div>
@@ -254,9 +456,9 @@ export default function ConversationDetailPage() {
 
   if (loading) {
     return (
-      <div className="container mx-auto p-6">
+      <div className="container mx-auto p-4">
         <div className="flex items-center justify-center h-64">
-          <p className="text-muted-foreground">読み込み中...</p>
+          <p className="text-muted-foreground">Loading...</p>
         </div>
       </div>
     );
@@ -264,10 +466,10 @@ export default function ConversationDetailPage() {
 
   if (error || !conversation) {
     return (
-      <div className="container mx-auto p-6">
+      <div className="container mx-auto p-4">
         <div className="flex items-center justify-center h-64">
           <p className="text-destructive">
-            エラー: {error || "会話が見つかりません"}
+            Error: {error || "Conversation not found"}
           </p>
         </div>
       </div>
@@ -275,7 +477,7 @@ export default function ConversationDetailPage() {
   }
 
   return (
-    <div className="container mx-auto p-6">
+    <div className="container mx-auto p-4">
       {/* カスタム通知 */}
       {showCopyNotification && (
         <div
@@ -320,35 +522,35 @@ export default function ConversationDetailPage() {
             <Link to={`/project/${params.projectId}`}>
               <Button variant="ghost" size="sm">
                 <ChevronLeft className="h-4 w-4 mr-1" />
-                会話一覧に戻る
+                Back to conversations
               </Button>
             </Link>
-            <h1 className="text-sm font-bold font-mono">
-              {conversation.conversationId}
-            </h1>
           </div>
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
               size="sm"
+              onClick={() => setIsFindOpen(true)}
+              title="Search (Ctrl+F)"
+            >
+              <Search className="h-3 w-3 mr-1" />
+              Search
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={handleExecuteInTerminal}
-              title="ターミナルで実行"
+              title="Execute in terminal"
             >
               <Terminal className="h-3 w-3 mr-1" />
-              ターミナルで再開
+              Resume in terminal
             </Button>
           </div>
         </div>
-        <p className="text-sm text-muted-foreground">
-          {new Date(conversation.startTime).toLocaleString("ja-JP")} -{" "}
-          {new Date(conversation.endTime).toLocaleString("ja-JP")}
-        </p>
       </div>
 
-      <Separator className="mb-4" />
-
       <div className="h-[calc(100vh-180px)] overflow-y-auto">
-        <div className="space-y-4 px-4 pb-4">
+        <div className="space-y-4 px-2 pb-4" ref={contentRef}>
           {conversation.entries.map((entry) => {
             const isRight = isRightAligned(entry.type);
             return (
@@ -361,15 +563,17 @@ export default function ConversationDetailPage() {
                 >
                   {!isRight && (
                     <div className="flex items-center gap-2">
-                      <div className="w-10 h-10 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center">
+                      <div className="w-6 h-6 flex items-center justify-center">
                         {getIcon(entry.type)}
                       </div>
-                      <span>{formatTimestamp(entry.timestamp)}</span>
-                      {entry.type === "assistant" && entry.model && (
-                        <span className="text-muted-foreground/70">
-                          • {entry.model}
-                        </span>
-                      )}
+                      <div>
+                        <div>{formatTimestamp(entry.timestamp)}</div>
+                        {entry.type === "assistant" && entry.model && (
+                          <div className="text-muted-foreground/70">
+                            {entry.model}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                   {isRight && (
@@ -380,7 +584,7 @@ export default function ConversationDetailPage() {
                         </span>
                       )}
                       <span>{formatTimestamp(entry.timestamp)}</span>
-                      <div className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
+                      <div className="w-6 h-6 flex items-center justify-center">
                         {getIcon(entry.type)}
                       </div>
                     </div>
@@ -395,9 +599,7 @@ export default function ConversationDetailPage() {
                 >
                   <Card
                     className={`${
-                      isRight
-                        ? "bg-primary/5 max-w-[85%]"
-                        : "bg-secondary/5 max-w-[85%]"
+                      isRight ? "bg-primary/5" : "bg-secondary/5"
                     } overflow-hidden py-3`}
                   >
                     <CardContent className="px-4">
@@ -417,6 +619,21 @@ export default function ConversationDetailPage() {
           })}
         </div>
       </div>
+
+      <FindInPageDialog
+        isOpen={isFindOpen}
+        onClose={() => {
+          setIsFindOpen(false);
+          setSearchTerm("");
+          setCurrentMatchIndex(0);
+          setTotalMatches(0);
+          handleHighlight(""); // Clear highlights
+        }}
+        onHighlight={handleHighlight}
+        onNavigate={handleNavigate}
+        currentMatch={currentMatchIndex + 1}
+        matchCount={totalMatches}
+      />
     </div>
   );
 }
