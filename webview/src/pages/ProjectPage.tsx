@@ -145,8 +145,10 @@ export default function ProjectPage() {
             Back to projects
           </Button>
         </Link>
-        <h1 className="text-md font-bold">{projectName}</h1>
-        <p className="text-muted-foreground mt-2">Conversation history</p>
+        <h1 className="text-lg text-muted-foreground">{projectName}</h1>
+        <p className="text-lg text-muted-foreground mt-2 font-bold">
+          Conversation history
+        </p>
         <Collapsible
           open={isSearchOpen}
           onOpenChange={setIsSearchOpen}
@@ -191,7 +193,7 @@ export default function ProjectPage() {
               <Card className="hover:bg-accent transition-colors cursor-pointer mt-2 py-4">
                 <CardHeader className="px-4">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-lg font-mono">
+                    <CardTitle className="text-md font-mono">
                       {conversation.conversationId}
                     </CardTitle>
                     <Badge variant="secondary">

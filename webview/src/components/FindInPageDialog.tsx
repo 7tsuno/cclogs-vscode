@@ -23,11 +23,33 @@ export function FindInPageDialog({
   const [searchText, setSearchText] = useState("");
   const [isComposing, setIsComposing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isOpen && inputRef.current) {
       inputRef.current.focus();
     }
+  }, [isOpen]);
+
+  // 枠外クリックの処理
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dialogRef.current && !dialogRef.current.contains(event.target as Node)) {
+        handleClose();
+      }
+    };
+
+    // 少し遅延させて、開く時のクリックで閉じないようにする
+    const timer = setTimeout(() => {
+      document.addEventListener("mousedown", handleClickOutside);
+    }, 100);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
   }, [isOpen]);
 
   const handleSearchChange = (value: string) => {
@@ -83,6 +105,7 @@ export function FindInPageDialog({
 
   return (
     <div
+      ref={dialogRef}
       className="fixed top-4 right-4 z-50 bg-popover border rounded-lg shadow-lg p-3 animate-in slide-in-from-top-2 fade-in duration-200"
       style={{ minWidth: "320px" }}
     >

@@ -6,7 +6,7 @@ A VS Code extension for viewing Claude Code conversation logs in a clean, organi
 
 - **Conversation Log Display**: View Claude Code logs stored in `~/.claude/projects`
 - **Log Search**: Search across all log files by content or date range
-- **In-Conversation Search**: Search within individual conversations using the search dialog
+- **In-Conversation Search**: Search within individual conversations using the search dialog (Ctrl+F / Cmd+F)
 - **Session Resume**: Resume sessions directly from the log details view with a single button click
 
 ## Installation

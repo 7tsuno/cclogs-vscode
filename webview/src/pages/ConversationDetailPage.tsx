@@ -4,34 +4,24 @@ import type { ConversationDetail } from "../lib/vscode-api";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "../components/ui/card";
-import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
-import { Separator } from "../components/ui/separator";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "../components/ui/collapsible";
 import {
   ChevronLeft,
   ChevronDown,
-  ChevronRight,
   ChevronUp,
   User,
   Bot,
   Wrench,
-  Copy,
   Terminal,
   Search,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { api } from "../lib/api";
 import { FindInPageDialog } from "../components/FindInPageDialog";
-import { highlightText, countMatches, scrollToMatch } from "../lib/highlight";
+import { scrollToMatch } from "../lib/highlight";
 
 export default function ConversationDetailPage() {
   const params = useParams<{ projectId: string; id: string }>();

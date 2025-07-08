@@ -3,13 +3,11 @@ import { Link } from "react-router-dom";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "../components/ui/card";
-import { Badge } from "../components/ui/badge";
 import { ScrollArea } from "../components/ui/scroll-area";
-import { Folder, MessageSquare } from "lucide-react";
+import { Folder } from "lucide-react";
 import { api } from "../lib/api";
 import type { Project } from "../lib/vscode-api";
 
@@ -69,12 +67,12 @@ export default function HomePage() {
 
   return (
     <div className="container mx-auto p-6">
-      <div className="mb-8">
-        <p className="text-muted-foreground mt-2">Project List</p>
+      <div className="mb-4">
+        <p className="text-muted-foreground font-bold text-lg">Project List</p>
       </div>
 
       <ScrollArea className="h-[calc(100vh-200px)]">
-        <div className="grid grid-cols-1 gap-4 pr-4">
+        <div className="grid grid-cols-1 gap-2 pr-4">
           {projects.map((project) => (
             <Link key={project.id} to={`/project/${project.id}`}>
               <Card className="hover:bg-accent transition-colors cursor-pointer h-full py-6">
@@ -82,7 +80,7 @@ export default function HomePage() {
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-2">
                       <Folder className="h-5 w-5 text-muted-foreground" />
-                      <CardTitle className="text-lg line-clamp-2">
+                      <CardTitle className="text-md line-clamp-2">
                         {project.name}
                       </CardTitle>
                     </div>
@@ -90,7 +88,6 @@ export default function HomePage() {
                 </CardHeader>
                 <CardContent className="space-y-2">
                   <div className="flex items-center gap-2">
-                    <MessageSquare className="h-4 w-4 text-muted-foreground" />
                     <span className="text-sm text-muted-foreground">
                       {project.conversationCount} conversations
                     </span>
