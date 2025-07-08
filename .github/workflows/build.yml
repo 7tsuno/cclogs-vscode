@@ -69,16 +69,18 @@ jobs:
           body: |
             ## Claude Code Logs Viewer ${{ github.event.inputs.version || github.ref_name }}
 
-            Claude Code の会話ログを VS Code 内で見やすく表示する拡張機能です。
+            A VS Code extension for viewing Claude Code conversation logs in a clean, organized interface.
 
-            ### 機能
-            - **会話ログ表示**: `~/.claude/projects` 内に保存された Claude Code のログを表示
-            - **セッション再開**: ログ詳細画面からボタン一つでターミナルでセッション再開
+            ### Features
+            - **Conversation Log Display**: View Claude Code logs stored in `~/.claude/projects`
+            - **Log Search**: Search across all log files by content or date range
+            - **In-Conversation Search**: Search within individual conversations using the search dialog
+            - **Session Resume**: Resume sessions directly from the log details view with a single button click
 
-            ### インストール方法
-            1. 下記の `.vsix` ファイルをダウンロード
-            2. VS Code でコマンドパレット（`Ctrl+Shift+P` / `Cmd+Shift+P`）を開く
-            3. `Extensions: Install from VSIX...` を選択
-            4. ダウンロードした `.vsix` ファイルを選択
+            ### Installation
+            1. Download the `.vsix` file below
+            2. Open Command Palette in VS Code (`Ctrl+Shift+P` / `Cmd+Shift+P`)
+            3. Select `Extensions: Install from VSIX...`
+            4. Choose the downloaded `.vsix` file
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
