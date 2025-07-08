@@ -2,6 +2,8 @@
 
 A VS Code extension for viewing Claude Code conversation logs in a clean, organized interface.
 
+<img width="845" alt="image" src="https://github.com/user-attachments/assets/386a53d2-705a-4c96-a7a0-f101d169afa6" />
+
 ## Features
 
 - **Conversation Log Display**: View Claude Code logs stored in `~/.claude/projects`
