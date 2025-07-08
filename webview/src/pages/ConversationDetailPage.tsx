@@ -37,17 +37,42 @@ export default function ConversationDetailPage() {
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
   const [totalMatches, setTotalMatches] = useState(0);
   const contentRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const [autoScroll, setAutoScroll] = useState(true);
 
   useEffect(() => {
     if (params.id && params.projectId) {
       fetchConversation(params.projectId, params.id);
+      
+      // ファイル更新リスナーの登録
+      const unsubscribe = api.onFileUpdate((data) => {
+        // 現在表示中の会話のファイルが更新された場合
+        if (data.projectId === params.projectId && 
+            params.id && data.fileName.includes(params.id)) {
+          console.log('Conversation file update:', data);
+          fetchConversation(params.projectId, params.id);
+        }
+      });
+      
+      return () => {
+        unsubscribe();
+      };
     }
-  }, [params.id, params.projectId]);
+  }, [params.id, params.projectId, autoScroll]);
 
   const fetchConversation = async (projectId: string, id: string) => {
     try {
       const data = await api.getLogDetail(projectId, id);
       setConversation(data);
+      
+      // 自動スクロールが有効な場合は最下部へ
+      if (autoScroll && scrollAreaRef.current) {
+        setTimeout(() => {
+          if (scrollAreaRef.current) {
+            scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+          }
+        }, 100);
+      }
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "不明なエラーが発生しました"
@@ -518,6 +543,24 @@ export default function ConversationDetailPage() {
           </div>
           <div className="flex items-center gap-2">
             <Button
+              variant={autoScroll ? "default" : "outline"}
+              size="sm"
+              onClick={() => setAutoScroll(!autoScroll)}
+              title="Toggle auto-scroll"
+            >
+              {autoScroll ? (
+                <>
+                  <ChevronDown className="h-3 w-3 mr-1" />
+                  Auto-scroll ON
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="h-3 w-3 mr-1 opacity-50" />
+                  Auto-scroll OFF
+                </>
+              )}
+            </Button>
+            <Button
               variant="outline"
               size="sm"
               onClick={() => setIsFindOpen(true)}
@@ -539,7 +582,10 @@ export default function ConversationDetailPage() {
         </div>
       </div>
 
-      <div className="h-[calc(100vh-180px)] overflow-y-auto">
+      <div 
+        className="h-[calc(100vh-180px)] overflow-y-auto" 
+        ref={scrollAreaRef}
+      >
         <div className="space-y-4 px-2 pb-4" ref={contentRef}>
           {conversation.entries.map((entry) => {
             const isRight = isRightAligned(entry.type);

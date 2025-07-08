@@ -1,5 +1,5 @@
 // Mock API for development environment
-import type { Project, Conversation, ConversationDetail } from "./vscode-api";
+import type { Project, Conversation, ConversationDetail, FileUpdateListener } from "./vscode-api";
 
 // Mock data
 const mockProjects: Project[] = [
@@ -1048,6 +1048,15 @@ export class MockVSCodeAPI {
       }
       return true;
     });
+  }
+
+  // ファイル更新リスナーの登録（開発環境では何もしない）
+  onFileUpdate(_listener: FileUpdateListener): () => void {
+    console.log('Mock: File update listener registered');
+    // 開発環境では更新イベントは発生しないため、空の unsubscribe 関数を返す
+    return () => {
+      console.log('Mock: File update listener unregistered');
+    };
   }
 }
 

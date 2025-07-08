@@ -22,6 +22,8 @@ class ClaudeLogsPanel {
     private readonly _panel: vscode.WebviewPanel;
     private readonly _extensionUri: vscode.Uri;
     private _disposables: vscode.Disposable[] = [];
+    private _fileWatcher: vscode.FileSystemWatcher | undefined;
+    private _updateTimer: NodeJS.Timeout | undefined;
 
     public static createOrShow(extensionUri: vscode.Uri) {
         const column = vscode.window.activeTextEditor
@@ -54,6 +56,7 @@ class ClaudeLogsPanel {
         this._extensionUri = extensionUri;
 
         this._update();
+        this._setupFileWatcher();
 
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
 
@@ -594,8 +597,63 @@ class ClaudeLogsPanel {
             </html>`;
     }
 
+    private _setupFileWatcher() {
+        const claudeProjectsPath = path.join(os.homedir(), '.claude', 'projects');
+        
+        // ファイルウォッチャーの作成
+        const pattern = new vscode.RelativePattern(claudeProjectsPath, '**/*.jsonl');
+        this._fileWatcher = vscode.workspace.createFileSystemWatcher(pattern);
+        
+        // デバウンス処理を行う関数
+        const debounceUpdate = (eventType: string, uri: vscode.Uri) => {
+            // 既存のタイマーをクリア
+            if (this._updateTimer) {
+                clearTimeout(this._updateTimer);
+            }
+            
+            // 500ms後に更新通知を送信
+            this._updateTimer = setTimeout(() => {
+                this._notifyUpdate(eventType, uri);
+            }, 500);
+        };
+        
+        // ファイル変更イベントのハンドラ
+        this._fileWatcher.onDidCreate(uri => debounceUpdate('create', uri));
+        this._fileWatcher.onDidChange(uri => debounceUpdate('change', uri));
+        this._fileWatcher.onDidDelete(uri => debounceUpdate('delete', uri));
+        
+        // Disposableに追加
+        this._disposables.push(this._fileWatcher);
+    }
+    
+    private _notifyUpdate(eventType: string, uri: vscode.Uri) {
+        // ファイルパスからプロジェクトIDを抽出
+        const pathParts = uri.fsPath.split(path.sep);
+        const projectsIndex = pathParts.indexOf('projects');
+        
+        if (projectsIndex >= 0 && projectsIndex < pathParts.length - 2) {
+            const projectId = pathParts[projectsIndex + 1];
+            const fileName = path.basename(uri.fsPath);
+            
+            console.log(`File ${eventType}: ${fileName} in project ${projectId}`);
+            
+            // Webviewに更新通知を送信
+            this._panel.webview.postMessage({
+                command: 'fileUpdate',
+                eventType,
+                projectId,
+                fileName
+            });
+        }
+    }
+
     public dispose() {
         ClaudeLogsPanel.currentPanel = undefined;
+
+        // タイマーのクリア
+        if (this._updateTimer) {
+            clearTimeout(this._updateTimer);
+        }
 
         this._panel.dispose();
 

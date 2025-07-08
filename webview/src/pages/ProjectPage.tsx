@@ -41,6 +41,19 @@ export default function ProjectPage() {
   useEffect(() => {
     if (params.projectId) {
       fetchConversations(params.projectId);
+      
+      // ファイル更新リスナーの登録
+      const unsubscribe = api.onFileUpdate((data) => {
+        // 現在表示中のプロジェクトのファイルが更新された場合
+        if (data.projectId === params.projectId) {
+          console.log('Project file update:', data);
+          fetchConversations(params.projectId);
+        }
+      });
+      
+      return () => {
+        unsubscribe();
+      };
     }
   }, [params.projectId]);
 

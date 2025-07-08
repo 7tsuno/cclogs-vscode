@@ -18,6 +18,19 @@ export default function HomePage() {
 
   useEffect(() => {
     fetchProjects();
+    
+    // ファイル更新リスナーの登録
+    const unsubscribe = api.onFileUpdate((data) => {
+      console.log('File update event:', data);
+      // プロジェクト一覧の更新が必要な場合（新規作成・削除）
+      if (data.eventType === 'create' || data.eventType === 'delete') {
+        fetchProjects();
+      }
+    });
+    
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   const fetchProjects = async () => {

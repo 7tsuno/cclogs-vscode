@@ -38,12 +38,32 @@ export interface ConversationDetail {
   }>;
 }
 
+export type FileUpdateListener = (data: {
+  eventType: 'create' | 'change' | 'delete';
+  projectId: string;
+  fileName: string;
+}) => void;
+
 class VSCodeAPI {
   private messageHandlers: Map<string, (data: any) => void> = new Map();
+  private fileUpdateListeners: Set<FileUpdateListener> = new Set();
 
   constructor() {
     window.addEventListener('message', event => {
       const message = event.data;
+      
+      // ファイル更新イベントの処理
+      if (message.command === 'fileUpdate') {
+        this.fileUpdateListeners.forEach(listener => {
+          listener({
+            eventType: message.eventType,
+            projectId: message.projectId,
+            fileName: message.fileName
+          });
+        });
+        return;
+      }
+      
       const handler = this.messageHandlers.get(message.command);
       if (handler) {
         handler(message);
@@ -135,6 +155,15 @@ class VSCodeAPI {
       });
       vscode.postMessage({ command: 'searchLogs', projectId, filters });
     });
+  }
+
+  // ファイル更新リスナーの登録
+  onFileUpdate(listener: FileUpdateListener): () => void {
+    this.fileUpdateListeners.add(listener);
+    // unsubscribe関数を返す
+    return () => {
+      this.fileUpdateListeners.delete(listener);
+    };
   }
 }
 
