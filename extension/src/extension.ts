@@ -212,11 +212,14 @@ class ClaudeLogsPanel {
             );
 
             const validConversations = conversations.filter((conv): conv is NonNullable<typeof conv> => conv !== null);
-            validConversations.sort((a, b) => b.endTime.localeCompare(a.endTime));
+            
+            // 統合されたファイルを除外
+            const consolidatedConversations = this._filterConsolidatedConversations(validConversations, projectPath);
+            consolidatedConversations.sort((a, b) => b.endTime.localeCompare(a.endTime));
 
             this._panel.webview.postMessage({ 
                 command: 'logsResponse', 
-                conversations: validConversations 
+                conversations: consolidatedConversations 
             });
         } catch (error) {
             console.error('Project logs error:', error);
@@ -224,6 +227,47 @@ class ClaudeLogsPanel {
                 command: 'logsResponse', 
                 error: `会話ログの読み込みに失敗しました: ${error instanceof Error ? error.message : String(error)}` 
             });
+        }
+    }
+
+    private _filterConsolidatedConversations(conversations: any[], projectPath: string): any[] {
+        try {
+            // 各ファイルのsessionIdを確認し、他のファイルに含まれているかチェック
+            const consolidatedFiles = new Set<string>();
+            
+            conversations.forEach(convA => {
+                const sessionIdA = convA.conversationId; // これがsessionId
+                
+                conversations.forEach(convB => {
+                    if (convA.conversationId === convB.conversationId) return; // 同じファイルはスキップ
+                    
+                    // convBファイルの中身を読んで、sessionIdAがJSONエントリのsessionIdフィールドとして含まれているかチェック
+                    const filePath = path.join(projectPath, convB.fileName);
+                    const content = fs.readFileSync(filePath, 'utf-8');
+                    const lines = content.trim().split('\n').filter(line => line);
+                    
+                    let hasSessionId = false;
+                    lines.forEach(line => {
+                        try {
+                            const entry = JSON.parse(line);
+                            if (entry.sessionId === sessionIdA) {
+                                hasSessionId = true;
+                            }
+                        } catch {}
+                    });
+                    
+                    if (hasSessionId) {
+                        // sessionIdAが他のファイルのJSONエントリに含まれている場合、古い方を除外
+                        const older = convA.endTime < convB.endTime ? convA : convB;
+                        consolidatedFiles.add(older.conversationId);
+                    }
+                });
+            });
+            
+            return conversations.filter(conv => !consolidatedFiles.has(conv.conversationId));
+        } catch (error) {
+            console.error('Consolidation filter error:', error);
+            return conversations; // エラー時は元のリストを返す
         }
     }
 
