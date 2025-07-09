@@ -679,15 +679,68 @@ class ClaudeLogsPanel {
             const projectId = pathParts[projectsIndex + 1];
             const fileName = path.basename(uri.fsPath);
             
-            console.log(`File ${eventType}: ${fileName} in project ${projectId}`);
+            
+            // ファイルが変更された場合、既存ファイルからの派生かチェック
+            let derivedFromFile: string | null = null;
+            if (eventType === 'change' && fileName.endsWith('.jsonl')) {
+                derivedFromFile = this._checkIfDerivedFile(projectId, fileName);
+                
+            }
             
             // Webviewに更新通知を送信
-            this._panel.webview.postMessage({
+            const message = {
                 command: 'fileUpdate',
                 eventType,
                 projectId,
-                fileName
+                fileName,
+                derivedFromFile
+            };
+            this._panel.webview.postMessage(message);
+        }
+    }
+    
+    private _checkIfDerivedFile(projectId: string, newFileName: string): string | null {
+        try {
+            const projectPath = path.join(os.homedir(), '.claude', 'projects', projectId);
+            const newFilePath = path.join(projectPath, newFileName);
+            
+            // 新しいファイルが存在しない場合は処理しない
+            if (!fs.existsSync(newFilePath)) {
+                return null;
+            }
+            
+            const newFileContent = fs.readFileSync(newFilePath, 'utf-8');
+            const newLines = newFileContent.trim().split('\n').filter(line => line);
+            
+            // 新しいファイルのJSONエントリから他のsessionIdを検索
+            const otherSessionIds = new Set<string>();
+            const currentSessionId = newFileName.replace('.jsonl', '');
+            
+            newLines.forEach(line => {
+                try {
+                    const entry = JSON.parse(line);
+                    if (entry.sessionId && entry.sessionId !== currentSessionId) {
+                        otherSessionIds.add(entry.sessionId);
+                    }
+                } catch {}
             });
+            
+            
+            // 他のファイルでこれらのsessionIdを持つファイルを検索
+            const files = fs.readdirSync(projectPath);
+            const jsonlFiles = files.filter(file => file.endsWith('.jsonl') && file !== newFileName);
+            
+            for (const sessionId of otherSessionIds) {
+                const sourceFile = jsonlFiles.find(file => file.replace('.jsonl', '') === sessionId);
+                if (sourceFile) {
+                    return sourceFile.replace('.jsonl', '');
+                }
+            }
+            
+            return null;
+        } catch (error) {
+            console.error('Error checking derived file:', error);
+            return null;
         }
     }
 

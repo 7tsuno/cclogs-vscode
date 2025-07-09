@@ -42,6 +42,7 @@ export type FileUpdateListener = (data: {
   eventType: 'create' | 'change' | 'delete';
   projectId: string;
   fileName: string;
+  derivedFromFile?: string;
 }) => void;
 
 class VSCodeAPI {
@@ -58,7 +59,8 @@ class VSCodeAPI {
           listener({
             eventType: message.eventType,
             projectId: message.projectId,
-            fileName: message.fileName
+            fileName: message.fileName,
+            derivedFromFile: message.derivedFromFile
           });
         });
         return;

@@ -49,8 +49,17 @@ export default function ConversationDetailPage() {
         // 現在表示中の会話のファイルが更新された場合
         if (data.projectId === params.projectId && 
             params.id && data.fileName.includes(params.id)) {
-          console.log('Conversation file update:', data);
           fetchConversation(params.projectId, params.id);
+        }
+        
+        // 新しいファイルが現在表示中のファイルから派生した場合、自動遷移
+        // eventTypeをchangeに変更（ファイルが完全に書き込まれた後に検出されるため）
+        if (data.eventType === 'change' && 
+            data.derivedFromFile === params.id && 
+            data.projectId === params.projectId) {
+          const newConversationId = data.fileName.replace('.jsonl', '');
+          // React Routerで新しいファイルに遷移
+          window.location.hash = `#/project/${params.projectId}/conversation/${newConversationId}`;
         }
       });
       
