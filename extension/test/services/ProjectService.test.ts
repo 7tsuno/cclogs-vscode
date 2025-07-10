@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { ProjectService, Project } from '../../src/services/ProjectService';
+import { ProjectService } from '../../src/services/ProjectService';
 
 // fsモジュールをモック
 jest.mock('fs');

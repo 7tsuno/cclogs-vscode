@@ -266,4 +266,178 @@ describe('ConversationService', () => {
                 `Second call should use cache. First: ${callCountAfterFirst}, Second: ${callCountAfterSecond}`);
         });
     });
+
+    describe('getConversationDetail', () => {
+        it('ログファイルが見つからない場合はエラーをスロー', async () => {
+            (fs.readdirSync as jest.Mock).mockReturnValue(['other-file.jsonl']);
+            
+            await assert.rejects(
+                async () => await service.getConversationDetail('test-project', 'missing-log'),
+                /ログファイルが見つかりません/
+            );
+        });
+
+        it('シンプルなメッセージエントリを正しく処理する', async () => {
+            (fs.readdirSync as jest.Mock).mockReturnValue(['test-log.jsonl']);
+            
+            const mockContent = [
+                {
+                    timestamp: '2024-01-01T10:00:00Z',
+                    type: 'message',
+                    message: {
+                        role: 'user',
+                        content: 'Hello, Claude!'
+                    }
+                },
+                {
+                    timestamp: '2024-01-01T10:00:01Z',
+                    type: 'message',
+                    message: {
+                        role: 'assistant',
+                        content: 'Hello! How can I help you?',
+                        model: 'claude-3-opus-20240229'
+                    }
+                }
+            ].map(entry => JSON.stringify(entry)).join('\n');
+            
+            (fs.readFileSync as jest.Mock).mockReturnValue(mockContent);
+            
+            const result = await service.getConversationDetail('test-project', 'test-log');
+            
+            assert.strictEqual(result.conversationId, 'test-log');
+            assert.strictEqual(result.startTime, '2024-01-01T10:00:00Z');
+            assert.strictEqual(result.endTime, '2024-01-01T10:00:01Z');
+            assert.strictEqual(result.entries.length, 2);
+            
+            assert.strictEqual(result.entries[0].type, 'user');
+            assert.strictEqual(result.entries[0].content, 'Hello, Claude!');
+            
+            assert.strictEqual(result.entries[1].type, 'assistant');
+            assert.strictEqual(result.entries[1].content, 'Hello! How can I help you?');
+            assert.strictEqual(result.entries[1].model, 'claude-3-opus-20240229');
+        });
+
+        it('thinking付きのメッセージを正しく処理する', async () => {
+            (fs.readdirSync as jest.Mock).mockReturnValue(['thinking-log.jsonl']);
+            
+            const mockContent = JSON.stringify({
+                timestamp: '2024-01-01T10:00:00Z',
+                type: 'message',
+                message: {
+                    role: 'assistant',
+                    content: [
+                        { type: 'thinking', thinking: 'Let me think about this...' },
+                        { type: 'text', text: 'Here is my response.' }
+                    ]
+                }
+            });
+            
+            (fs.readFileSync as jest.Mock).mockReturnValue(mockContent);
+            
+            const result = await service.getConversationDetail('test-project', 'thinking-log');
+            
+            assert.strictEqual(result.entries.length, 1);
+            assert.strictEqual(result.entries[0].content, 'Here is my response.');
+            assert.strictEqual(result.entries[0].thinking, 'Let me think about this...');
+        });
+
+        it('ツール実行結果を正しく処理する', async () => {
+            (fs.readdirSync as jest.Mock).mockReturnValue(['tool-log.jsonl']);
+            
+            const mockContent = [
+                {
+                    timestamp: '2024-01-01T10:00:00Z',
+                    type: 'tool_result',
+                    toolUseResult: 'Command executed successfully'
+                },
+                {
+                    timestamp: '2024-01-01T10:00:01Z',
+                    type: 'tool_result',
+                    toolUseResult: { status: 'success', output: 'test output' }
+                }
+            ].map(entry => JSON.stringify(entry)).join('\n');
+            
+            (fs.readFileSync as jest.Mock).mockReturnValue(mockContent);
+            
+            const result = await service.getConversationDetail('test-project', 'tool-log');
+            
+            assert.strictEqual(result.entries.length, 2);
+            assert.strictEqual(result.entries[0].type, 'tool_result');
+            assert.strictEqual(result.entries[0].content, 'Command executed successfully');
+            
+            assert.strictEqual(result.entries[1].type, 'tool_result');
+            assert.ok(result.entries[1].content.includes('"status": "success"'));
+        });
+
+        it('summaryエントリを正しく処理する', async () => {
+            (fs.readdirSync as jest.Mock).mockReturnValue(['summary-log.jsonl']);
+            
+            const mockContent = JSON.stringify({
+                timestamp: '2024-01-01T10:00:00Z',
+                type: 'summary',
+                summary: 'This is a conversation summary'
+            });
+            
+            (fs.readFileSync as jest.Mock).mockReturnValue(mockContent);
+            
+            const result = await service.getConversationDetail('test-project', 'summary-log');
+            
+            assert.strictEqual(result.entries.length, 1);
+            assert.strictEqual(result.entries[0].type, 'summary');
+            assert.strictEqual(result.entries[0].content, 'This is a conversation summary');
+        });
+
+        it('メタ情報エントリを除外する', async () => {
+            (fs.readdirSync as jest.Mock).mockReturnValue(['meta-log.jsonl']);
+            
+            const mockContent = [
+                { isMeta: true, version: '1.0' },
+                { timestamp: '2024-01-01T10:00:00Z', type: 'message', message: { role: 'user', content: 'test' } }
+            ].map(entry => JSON.stringify(entry)).join('\n');
+            
+            (fs.readFileSync as jest.Mock).mockReturnValue(mockContent);
+            
+            const result = await service.getConversationDetail('test-project', 'meta-log');
+            
+            assert.strictEqual(result.entries.length, 1);
+            assert.strictEqual(result.entries[0].content, 'test');
+        });
+
+        it('不正なJSONを含む行をスキップする', async () => {
+            (fs.readdirSync as jest.Mock).mockReturnValue(['invalid-log.jsonl']);
+            
+            const mockContent = [
+                '{ invalid json',
+                JSON.stringify({ timestamp: '2024-01-01T10:00:00Z', type: 'message', message: { role: 'user', content: 'valid' } }),
+                'not json at all'
+            ].join('\n');
+            
+            (fs.readFileSync as jest.Mock).mockReturnValue(mockContent);
+            
+            const result = await service.getConversationDetail('test-project', 'invalid-log');
+            
+            assert.strictEqual(result.entries.length, 1);
+            assert.strictEqual(result.entries[0].content, 'valid');
+        });
+
+        it('conversationIdを含むファイル名でも検索できる', async () => {
+            (fs.readdirSync as jest.Mock).mockReturnValue([
+                'session-abc-123.jsonl',
+                'session-def-456.jsonl'
+            ]);
+            
+            const mockContent = JSON.stringify({
+                timestamp: '2024-01-01T10:00:00Z',
+                type: 'message',
+                message: { role: 'user', content: 'test' }
+            });
+            
+            (fs.readFileSync as jest.Mock).mockReturnValue(mockContent);
+            
+            const result = await service.getConversationDetail('test-project', 'abc');
+            
+            assert.strictEqual(result.conversationId, 'abc');
+            assert.strictEqual(result.entries.length, 1);
+        });
+    });
 });

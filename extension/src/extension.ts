@@ -190,111 +190,7 @@ class ClaudeLogsPanel {
 
     private async _getLogDetail(projectId: string, logId: string) {
         try {
-            const files = fs.readdirSync(path.join(os.homedir(), '.claude', 'projects', projectId));
-            const targetFile = files.find(file => 
-                file.includes(logId) || file.replace('.jsonl', '') === logId
-            );
-
-            if (!targetFile) {
-                this._panel.webview.postMessage({ 
-                    command: 'logDetailResponse', 
-                    error: 'ログファイルが見つかりません' 
-                });
-                return;
-            }
-
-            const filePath = path.join(os.homedir(), '.claude', 'projects', projectId, targetFile);
-            const content = fs.readFileSync(filePath, 'utf-8');
-            const lines = content.trim().split('\n').filter(line => line);
-            
-            const entries = lines.map((line, index) => {
-                try {
-                    const entry = JSON.parse(line);
-
-                    // メタ情報のエントリは除外
-                    if (entry.isMeta) {
-                        return null;
-                    }
-
-                    // ツール実行結果のエントリ
-                    if (entry.toolUseResult) {
-                        return {
-                            id: `${logId}-${index}`,
-                            timestamp: entry.timestamp || "",
-                            type: "tool_result",
-                            content: typeof entry.toolUseResult === "string"
-                                ? entry.toolUseResult
-                                : JSON.stringify(entry.toolUseResult, null, 2),
-                            metadata: entry,
-                        };
-                    }
-
-                    // messageフィールドがある場合はその内容を展開
-                    if (entry.message) {
-                        let content = "";
-
-                        // message.contentの処理
-                        if (entry.message.content) {
-                            if (typeof entry.message.content === "string") {
-                                content = entry.message.content;
-                            } else if (Array.isArray(entry.message.content)) {
-                                // tool_useの内容は別途metadataで保持し、ここでは表示しない
-                                content = entry.message.content
-                                    .filter((c: any) => c.type === "text")
-                                    .map((c: any) => c.text || "")
-                                    .join("\n");
-                            }
-                        }
-
-                        const thinking = Array.isArray(entry.message.content)
-                            ? entry.message.content
-                                .filter((c: any) => c.type === "thinking")
-                                .map((c: any) => c.thinking || "")
-                                .join("\n")
-                            : "";
-
-                        return {
-                            id: `${logId}-${index}`,
-                            timestamp: entry.timestamp || "",
-                            type: entry.type || entry.message.role || "unknown",
-                            content: content,
-                            model: entry.message.model || "",
-                            thinking: thinking,
-                            metadata: entry, // 元のエントリ全体を保持
-                        };
-                    }
-
-                    // summaryなどの特殊なエントリ
-                    if (entry.summary) {
-                        return {
-                            id: `${logId}-${index}`,
-                            timestamp: entry.timestamp || "",
-                            type: "summary",
-                            content: entry.summary,
-                            metadata: entry,
-                        };
-                    }
-
-                    // その他のエントリ
-                    return {
-                        id: `${logId}-${index}`,
-                        timestamp: entry.timestamp || "",
-                        type: entry.type || "system",
-                        content: JSON.stringify(entry, null, 2),
-                        metadata: entry,
-                    };
-                } catch {
-                    return null;
-                }
-            }).filter(Boolean);
-
-            const conversationDetail = {
-                conversationId: logId,
-                startTime: entries[0]?.timestamp || "",
-                endTime: entries[entries.length - 1]?.timestamp || "",
-                entries
-            };
-
+            const conversationDetail = await conversationService.getConversationDetail(projectId, logId);
             this._panel.webview.postMessage({ 
                 command: 'logDetailResponse', 
                 conversation: conversationDetail 
@@ -302,7 +198,7 @@ class ClaudeLogsPanel {
         } catch (error) {
             this._panel.webview.postMessage({ 
                 command: 'logDetailResponse', 
-                error: 'ログ詳細の読み込みに失敗しました' 
+                error: error instanceof Error ? error.message : 'ログ詳細の読み込みに失敗しました' 
             });
         }
     }

@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 
 export interface ConversationInfo {
     conversationId: string;
@@ -10,10 +11,35 @@ export interface ConversationInfo {
     preview?: any[];
 }
 
+export interface ConversationEntry {
+    id: string;
+    timestamp: string;
+    type: string;
+    content: string;
+    metadata?: any;
+    model?: string;
+    thinking?: string;
+}
+
+export interface ConversationDetail {
+    conversationId: string;
+    startTime: string;
+    endTime: string;
+    entries: ConversationEntry[];
+}
+
 interface LogEntry {
     sessionId?: string;
     timestamp?: string;
     type?: string;
+    isMeta?: boolean;
+    message?: {
+        role?: string;
+        content?: string | Array<{ type: string; text?: string; thinking?: string }>;
+        model?: string;
+    };
+    toolUseResult?: any;
+    summary?: string;
     [key: string]: any;
 }
 
@@ -153,6 +179,137 @@ export class ConversationService {
         
         // このファイルが統合済みとして判定されたら、永続キャッシュに移動される
         return sessionIds;
+    }
+    
+    /**
+     * 指定された会話の詳細を取得する
+     * @param projectId プロジェクトID
+     * @param conversationId 会話ID
+     * @returns 会話の詳細情報
+     */
+    public async getConversationDetail(projectId: string, conversationId: string): Promise<ConversationDetail> {
+        const projectPath = path.join(os.homedir(), '.claude', 'projects', projectId);
+        const files = fs.readdirSync(projectPath);
+        const targetFile = files.find(file => 
+            file.includes(conversationId) || file.replace('.jsonl', '') === conversationId
+        );
+
+        if (!targetFile) {
+            throw new Error('ログファイルが見つかりません');
+        }
+
+        const filePath = path.join(projectPath, targetFile);
+        const content = fs.readFileSync(filePath, 'utf-8');
+        const lines = content.trim().split('\n').filter(line => line);
+        
+        const entries: ConversationEntry[] = [];
+        let startTime = '';
+        let endTime = '';
+        
+        lines.forEach((line, index) => {
+            try {
+                const entry: LogEntry = JSON.parse(line);
+
+                // メタ情報のエントリは除外
+                if (entry.isMeta) {
+                    return;
+                }
+
+                // タイムスタンプの更新
+                if (entry.timestamp) {
+                    if (!startTime || entry.timestamp < startTime) {
+                        startTime = entry.timestamp;
+                    }
+                    if (!endTime || entry.timestamp > endTime) {
+                        endTime = entry.timestamp;
+                    }
+                }
+
+                // ツール実行結果のエントリ
+                if (entry.toolUseResult) {
+                    entries.push({
+                        id: `${conversationId}-${index}`,
+                        timestamp: entry.timestamp || "",
+                        type: "tool_result",
+                        content: typeof entry.toolUseResult === "string"
+                            ? entry.toolUseResult
+                            : JSON.stringify(entry.toolUseResult, null, 2),
+                        metadata: entry,
+                    });
+                    return;
+                }
+
+                // messageフィールドがある場合はその内容を展開
+                if (entry.message) {
+                    let content = "";
+                    let thinking = "";
+
+                    // message.contentの処理
+                    if (entry.message.content) {
+                        if (typeof entry.message.content === "string") {
+                            content = entry.message.content;
+                        } else if (Array.isArray(entry.message.content)) {
+                            // thinkingコンテンツを抽出
+                            const thinkingContent = entry.message.content.find((c: any) => c.type === "thinking");
+                            if (thinkingContent) {
+                                thinking = thinkingContent.thinking || thinkingContent.text || "";
+                            }
+
+                            // tool_useの内容は別途metadataで保持し、ここでは表示しない
+                            content = entry.message.content
+                                .filter((c: any) => c.type === "text")
+                                .map((c: any) => c.text || "")
+                                .join("\n");
+                        }
+                    }
+
+                    entries.push({
+                        id: `${conversationId}-${index}`,
+                        timestamp: entry.timestamp || "",
+                        type: entry.message.role || entry.type || "unknown",
+                        content: content,
+                        metadata: entry,
+                        model: entry.message.model || undefined,
+                        thinking: thinking || undefined,
+                    });
+                    return;
+                }
+
+                // summaryフィールドがある場合
+                if (entry.summary) {
+                    entries.push({
+                        id: `${conversationId}-${index}`,
+                        timestamp: entry.timestamp || "",
+                        type: "summary",
+                        content: entry.summary,
+                        metadata: entry,
+                    });
+                    return;
+                }
+
+                // その他のエントリ
+                const entryContent = entry.content || entry.text || JSON.stringify(entry);
+                const entryType = entry.type || 'unknown';
+
+                entries.push({
+                    id: `${conversationId}-${index}`,
+                    timestamp: entry.timestamp || "",
+                    type: entryType,
+                    content: entryContent,
+                    metadata: entry,
+                });
+            } catch (error) {
+                console.error(`Failed to parse line ${index}:`, error);
+                // パースエラーの場合はスキップ
+            }
+        });
+
+        return {
+            conversationId,
+            startTime,
+            endTime,
+            entries
+        };
     }
     
     /**
