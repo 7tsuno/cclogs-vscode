@@ -2,11 +2,12 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { conversationService } from './services/ConversationService';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('Claude Code Logs extension is now active!');
 
-    let disposable = vscode.commands.registerCommand('claudeCodeLogs.showLogs', () => {
+    const disposable = vscode.commands.registerCommand('claudeCodeLogs.showLogs', () => {
         ClaudeLogsPanel.createOrShow(context.extensionUri);
     });
 
@@ -214,7 +215,7 @@ class ClaudeLogsPanel {
             const validConversations = conversations.filter((conv): conv is NonNullable<typeof conv> => conv !== null);
             
             // 統合されたファイルを除外
-            const consolidatedConversations = this._filterConsolidatedConversations(validConversations, projectPath);
+            const consolidatedConversations = conversationService.filterConsolidatedConversations(validConversations, projectPath);
             consolidatedConversations.sort((a, b) => b.endTime.localeCompare(a.endTime));
 
             this._panel.webview.postMessage({ 
@@ -230,46 +231,6 @@ class ClaudeLogsPanel {
         }
     }
 
-    private _filterConsolidatedConversations(conversations: any[], projectPath: string): any[] {
-        try {
-            // 各ファイルのsessionIdを確認し、他のファイルに含まれているかチェック
-            const consolidatedFiles = new Set<string>();
-            
-            conversations.forEach(convA => {
-                const sessionIdA = convA.conversationId; // これがsessionId
-                
-                conversations.forEach(convB => {
-                    if (convA.conversationId === convB.conversationId) return; // 同じファイルはスキップ
-                    
-                    // convBファイルの中身を読んで、sessionIdAがJSONエントリのsessionIdフィールドとして含まれているかチェック
-                    const filePath = path.join(projectPath, convB.fileName);
-                    const content = fs.readFileSync(filePath, 'utf-8');
-                    const lines = content.trim().split('\n').filter(line => line);
-                    
-                    let hasSessionId = false;
-                    lines.forEach(line => {
-                        try {
-                            const entry = JSON.parse(line);
-                            if (entry.sessionId === sessionIdA) {
-                                hasSessionId = true;
-                            }
-                        } catch {}
-                    });
-                    
-                    if (hasSessionId) {
-                        // sessionIdAが他のファイルのJSONエントリに含まれている場合、古い方を除外
-                        const older = convA.endTime < convB.endTime ? convA : convB;
-                        consolidatedFiles.add(older.conversationId);
-                    }
-                });
-            });
-            
-            return conversations.filter(conv => !consolidatedFiles.has(conv.conversationId));
-        } catch (error) {
-            console.error('Consolidation filter error:', error);
-            return conversations; // エラー時は元のリストを返す
-        }
-    }
 
     private async _getLogDetail(projectId: string, logId: string) {
         try {
@@ -454,7 +415,7 @@ class ClaudeLogsPanel {
                         
                         // エントリの内容を取得
                         let entryContent = '';
-                        let entryTimestamp = entry.timestamp || '';
+                        const entryTimestamp = entry.timestamp || '';
                         let entryType = entry.type || 'unknown';
                         
                         if (entry.message) {
@@ -555,9 +516,6 @@ class ClaudeLogsPanel {
 
     private _getHtmlForWebview(webview: vscode.Webview) {
         // 実際にビルドされたファイルを確認
-        const fs = require('fs');
-        const path = require('path');
-        
         const distPath = vscode.Uri.joinPath(this._extensionUri, 'webview', 'dist').fsPath;
         const assetsPath = path.join(distPath, 'assets');
         
@@ -722,7 +680,9 @@ class ClaudeLogsPanel {
                     if (entry.sessionId && entry.sessionId !== currentSessionId) {
                         otherSessionIds.add(entry.sessionId);
                     }
-                } catch {}
+                } catch {
+                    // JSONパースエラーは無視
+                }
             });
             
             

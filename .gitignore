@@ -33,6 +33,10 @@ yarn-error.log*
 # TypeScript
 *.tsbuildinfo
 
+# Test build files
+extension/test/**/*.js
+extension/test/**/*.js.map
+
 # Temporary files
 *.tmp
 *.temp
