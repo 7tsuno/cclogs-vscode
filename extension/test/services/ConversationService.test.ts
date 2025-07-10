@@ -5,12 +5,20 @@ import { ConversationService, ConversationInfo } from '../../src/services/Conver
 jest.mock('fs');
 import * as fs from 'fs';
 
+// osモジュールをモック
+jest.mock('os');
+import * as os from 'os';
+
 describe('ConversationService', () => {
     let service: ConversationService;
     let mockFiles: { [path: string]: string } = {};
+    const mockHomedir = '/mock/home';
     const projectPath = '/mock/project/path';
 
     beforeEach(() => {
+        // os.homedirのモック
+        (os.homedir as jest.Mock).mockReturnValue(mockHomedir);
+        
         service = new ConversationService();
         service.clearCache(); // テストごとにキャッシュをクリア
         mockFiles = {};
@@ -438,6 +446,181 @@ describe('ConversationService', () => {
             
             assert.strictEqual(result.conversationId, 'abc');
             assert.strictEqual(result.entries.length, 1);
+        });
+    });
+
+    describe('getProjectLogs', () => {
+        it('プロジェクトが存在しない場合はエラーをスロー', async () => {
+            (fs.existsSync as jest.Mock).mockReturnValue(false);
+            
+            await assert.rejects(
+                async () => await service.getProjectLogs('test-project'),
+                /プロジェクトが見つかりません/
+            );
+        });
+
+        it('ログファイルを正しく読み込んで一覧を返す', async () => {
+            const projectId = 'test-project';
+            const projectPath = `${mockHomedir}/.claude/projects/${projectId}`;
+            
+            (fs.existsSync as jest.Mock).mockReturnValue(true);
+            (fs.readdirSync as jest.Mock).mockReturnValue(['session-1.jsonl', 'session-2.jsonl', 'other.txt']);
+            
+            addMockFile(`${projectPath}/session-1.jsonl`, [
+                { timestamp: '2024-01-01T10:00:00Z', type: 'message', message: { role: 'user', content: 'Hello' } },
+                { timestamp: '2024-01-01T10:00:01Z', type: 'message', message: { role: 'assistant', content: 'Hi there!' } }
+            ]);
+            
+            addMockFile(`${projectPath}/session-2.jsonl`, [
+                { timestamp: '2024-01-01T11:00:00Z', type: 'message', message: { role: 'user', content: 'Another chat' } }
+            ]);
+            
+            const result = await service.getProjectLogs(projectId);
+            
+            assert.strictEqual(result.length, 2);
+            assert.strictEqual(result[0].conversationId, 'session-2'); // 新しい順
+            assert.strictEqual(result[1].conversationId, 'session-1');
+            assert.strictEqual(result[0].entriesCount, 1);
+            assert.strictEqual(result[1].entriesCount, 2);
+        });
+
+        it('プレビューを正しく生成する', async () => {
+            const projectId = 'test-project';
+            const projectPath = `${mockHomedir}/.claude/projects/${projectId}`;
+            
+            (fs.existsSync as jest.Mock).mockReturnValue(true);
+            (fs.readdirSync as jest.Mock).mockReturnValue(['session-1.jsonl']);
+            
+            addMockFile(`${projectPath}/session-1.jsonl`, [
+                { timestamp: '2024-01-01T10:00:00Z', type: 'message', message: { role: 'user', content: 'First' } },
+                { timestamp: '2024-01-01T10:00:01Z', type: 'message', message: { role: 'assistant', content: 'Second' } },
+                { timestamp: '2024-01-01T10:00:02Z', type: 'message', message: { role: 'user', content: 'Third' } },
+                { timestamp: '2024-01-01T10:00:03Z', type: 'message', message: { role: 'assistant', content: 'Fourth' } }
+            ]);
+            
+            const result = await service.getProjectLogs(projectId);
+            
+            assert.strictEqual(result[0].preview.length, 3); // 最初の3件のみ
+            assert.strictEqual(result[0].preview[0].content, 'First');
+            assert.strictEqual(result[0].preview[1].content, 'Second');
+            assert.strictEqual(result[0].preview[2].content, 'Third');
+        });
+    });
+
+    describe('searchLogs', () => {
+        it('プロジェクトが存在しない場合はエラーをスロー', async () => {
+            (fs.existsSync as jest.Mock).mockReturnValue(false);
+            
+            await assert.rejects(
+                async () => await service.searchLogs('test-project', {}),
+                /プロジェクトが見つかりません/
+            );
+        });
+
+        it('内容検索で一致する会話を返す', async () => {
+            const projectId = 'test-project';
+            const projectPath = `${mockHomedir}/.claude/projects/${projectId}`;
+            
+            (fs.existsSync as jest.Mock).mockReturnValue(true);
+            (fs.readdirSync as jest.Mock).mockReturnValue(['session-1.jsonl', 'session-2.jsonl']);
+            
+            addMockFile(`${projectPath}/session-1.jsonl`, [
+                { timestamp: '2024-01-01T10:00:00Z', type: 'message', message: { role: 'user', content: 'Hello Claude' } }
+            ]);
+            
+            addMockFile(`${projectPath}/session-2.jsonl`, [
+                { timestamp: '2024-01-01T11:00:00Z', type: 'message', message: { role: 'user', content: 'Good morning' } }
+            ]);
+            
+            const result = await service.searchLogs(projectId, { content: 'claude' });
+            
+            assert.strictEqual(result.length, 1);
+            assert.strictEqual(result[0].conversationId, 'session-1');
+        });
+
+        it('日付フィルターが正しく機能する', async () => {
+            const projectId = 'test-project';
+            const projectPath = `${mockHomedir}/.claude/projects/${projectId}`;
+            
+            (fs.existsSync as jest.Mock).mockReturnValue(true);
+            (fs.readdirSync as jest.Mock).mockReturnValue(['session-1.jsonl', 'session-2.jsonl', 'session-3.jsonl']);
+            
+            addMockFile(`${projectPath}/session-1.jsonl`, [
+                { timestamp: '2024-01-01T10:00:00Z', type: 'message', message: { role: 'user', content: 'Early' } }
+            ]);
+            
+            addMockFile(`${projectPath}/session-2.jsonl`, [
+                { timestamp: '2024-01-15T10:00:00Z', type: 'message', message: { role: 'user', content: 'Middle' } }
+            ]);
+            
+            addMockFile(`${projectPath}/session-3.jsonl`, [
+                { timestamp: '2024-01-30T10:00:00Z', type: 'message', message: { role: 'user', content: 'Late' } }
+            ]);
+            
+            // dateFromフィルター
+            const resultFrom = await service.searchLogs(projectId, { dateFrom: '2024-01-10' });
+            assert.strictEqual(resultFrom.length, 2); // session-2とsession-3
+            
+            // dateToフィルター
+            const resultTo = await service.searchLogs(projectId, { dateTo: '2024-01-20' });
+            assert.strictEqual(resultTo.length, 2); // session-1とsession-2
+            
+            // 両方のフィルター
+            const resultBoth = await service.searchLogs(projectId, { dateFrom: '2024-01-10', dateTo: '2024-01-20' });
+            assert.strictEqual(resultBoth.length, 1); // session-2のみ
+            assert.strictEqual(resultBoth[0].conversationId, 'session-2');
+        });
+
+        it('複数のフィルターを組み合わせて使用できる', async () => {
+            const projectId = 'test-project';
+            const projectPath = `${mockHomedir}/.claude/projects/${projectId}`;
+            
+            (fs.existsSync as jest.Mock).mockReturnValue(true);
+            (fs.readdirSync as jest.Mock).mockReturnValue(['session-1.jsonl', 'session-2.jsonl']);
+            
+            addMockFile(`${projectPath}/session-1.jsonl`, [
+                { timestamp: '2024-01-01T10:00:00Z', type: 'message', message: { role: 'user', content: 'Hello Claude' } }
+            ]);
+            
+            addMockFile(`${projectPath}/session-2.jsonl`, [
+                { timestamp: '2024-01-15T10:00:00Z', type: 'message', message: { role: 'user', content: 'Hi there' } }
+            ]);
+            
+            const result = await service.searchLogs(projectId, { 
+                content: 'hello',
+                dateFrom: '2024-01-01' 
+            });
+            
+            assert.strictEqual(result.length, 1);
+            assert.strictEqual(result[0].conversationId, 'session-1');
+        });
+
+        it('統合されたファイルを検索結果から除外する', async () => {
+            const projectId = 'test-project';
+            const projectPath = `${mockHomedir}/.claude/projects/${projectId}`;
+            
+            (fs.existsSync as jest.Mock).mockReturnValue(true);
+            (fs.readdirSync as jest.Mock).mockReturnValue(['session-a.jsonl', 'session-b.jsonl', 'session-c.jsonl']);
+            
+            // session-aが後でsession-cに統合されたケース
+            addMockFile(`${projectPath}/session-a.jsonl`, [
+                { timestamp: '2024-01-01T10:00:00Z', type: 'message', sessionId: 'session-a', message: { role: 'user', content: 'Search target' } }
+            ]);
+            
+            addMockFile(`${projectPath}/session-b.jsonl`, [
+                { timestamp: '2024-01-01T11:00:00Z', type: 'message', sessionId: 'session-b', message: { role: 'user', content: 'Other content' } }
+            ]);
+            
+            addMockFile(`${projectPath}/session-c.jsonl`, [
+                { timestamp: '2024-01-01T12:00:00Z', type: 'message', sessionId: 'session-c', message: { role: 'user', content: 'Search target' } },
+                { timestamp: '2024-01-01T12:01:00Z', type: 'message', sessionId: 'session-a', message: { role: 'assistant', content: 'Response' } }
+            ]);
+            
+            const result = await service.searchLogs(projectId, { content: 'search' });
+            
+            // session-aは統合されているので除外され、session-cのみが返される
+            assert.strictEqual(result.length, 1);
+            assert.strictEqual(result[0].conversationId, 'session-c');
         });
     });
 });

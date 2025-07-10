@@ -28,6 +28,12 @@ export interface ConversationDetail {
     entries: ConversationEntry[];
 }
 
+export interface SearchFilters {
+    content?: string;
+    dateFrom?: string;
+    dateTo?: string;
+}
+
 interface LogEntry {
     sessionId?: string;
     timestamp?: string;
@@ -310,6 +316,203 @@ export class ConversationService {
             endTime,
             entries
         };
+    }
+    
+    /**
+     * プロジェクトのログ一覧を取得する
+     * @param projectId プロジェクトID
+     * @returns 会話情報のリスト
+     */
+    public async getProjectLogs(projectId: string): Promise<ConversationInfo[]> {
+        const projectPath = path.join(os.homedir(), '.claude', 'projects', projectId);
+        
+        if (!fs.existsSync(projectPath)) {
+            throw new Error('プロジェクトが見つかりません');
+        }
+
+        const files = fs.readdirSync(projectPath);
+        const jsonlFiles = files.filter(file => file.endsWith('.jsonl'));
+        
+        const conversations = await Promise.all(
+            jsonlFiles.map(async (fileName) => {
+                const filePath = path.join(projectPath, fileName);
+                const content = fs.readFileSync(filePath, 'utf-8');
+                const lines = content.trim().split('\n').filter(line => line);
+                
+                const entries = lines.map(line => {
+                    try {
+                        const entry = JSON.parse(line);
+                        // messageフィールドがある場合はその内容を展開
+                        if (entry.message) {
+                            return {
+                                timestamp: entry.timestamp || '',
+                                type: entry.type || entry.message.role || 'unknown',
+                                content: entry.message.content ? 
+                                    (typeof entry.message.content === 'string' ? 
+                                        entry.message.content : 
+                                        entry.message.content.map((c: any) => c.text || '').join('\n')
+                                    ) : ''
+                            };
+                        }
+                        // summaryなどの特殊なエントリ
+                        return {
+                            timestamp: entry.timestamp || '',
+                            type: entry.type || 'system',
+                            content: entry.summary || ''
+                        };
+                    } catch {
+                        return null;
+                    }
+                }).filter(Boolean);
+
+                if (entries.length === 0) return null;
+
+                const conversationId = fileName.replace('.jsonl', '');
+                const startTime = entries[0]?.timestamp || '';
+                const endTime = entries[entries.length - 1]?.timestamp || '';
+                
+                const preview = entries.slice(0, 3);
+
+                return {
+                    conversationId,
+                    fileName,
+                    startTime,
+                    endTime,
+                    entriesCount: entries.length,
+                    preview
+                };
+            })
+        );
+
+        const validConversations = conversations.filter((conv): conv is NonNullable<typeof conv> => conv !== null);
+        
+        // 統合されたファイルを除外
+        const consolidatedConversations = this.filterConsolidatedConversations(validConversations, projectPath);
+        consolidatedConversations.sort((a, b) => b.endTime.localeCompare(a.endTime));
+
+        return consolidatedConversations;
+    }
+    
+    /**
+     * ログを検索する
+     * @param projectId プロジェクトID
+     * @param filters 検索フィルター
+     * @returns フィルターに一致する会話情報のリスト
+     */
+    public async searchLogs(projectId: string, filters: SearchFilters): Promise<ConversationInfo[]> {
+        const projectPath = path.join(os.homedir(), '.claude', 'projects', projectId);
+        
+        if (!fs.existsSync(projectPath)) {
+            throw new Error('プロジェクトが見つかりません');
+        }
+
+        const files = fs.readdirSync(projectPath);
+        const jsonlFiles = files.filter(file => file.endsWith('.jsonl'));
+        const allResults: ConversationInfo[] = [];
+        
+        // 各ログファイルを検索
+        for (const fileName of jsonlFiles) {
+            const filePath = path.join(projectPath, fileName);
+            const content = fs.readFileSync(filePath, 'utf-8');
+            const lines = content.trim().split('\n').filter(line => line);
+            
+            let hasMatch = false;
+            const entries: any[] = [];
+            
+            // ログエントリをパース
+            for (const line of lines) {
+                try {
+                    const entry = JSON.parse(line);
+                    
+                    // メタ情報は除外
+                    if (entry.isMeta) continue;
+                    
+                    // エントリの内容を取得
+                    let entryContent = '';
+                    const entryTimestamp = entry.timestamp || '';
+                    let entryType = entry.type || 'unknown';
+                    
+                    if (entry.message) {
+                        entryType = entry.message.role || entry.type || 'unknown';
+                        if (typeof entry.message.content === 'string') {
+                            entryContent = entry.message.content;
+                        } else if (Array.isArray(entry.message.content)) {
+                            entryContent = entry.message.content
+                                .filter((c: any) => c.type === 'text')
+                                .map((c: any) => c.text || '')
+                                .join('\n');
+                        }
+                    } else if (entry.toolUseResult) {
+                        entryType = 'tool_result';
+                        entryContent = typeof entry.toolUseResult === 'string'
+                            ? entry.toolUseResult
+                            : JSON.stringify(entry.toolUseResult);
+                    } else if (entry.summary) {
+                        entryType = 'summary';
+                        entryContent = entry.summary;
+                    }
+                    
+                    entries.push({
+                        content: entryContent,
+                        timestamp: entryTimestamp,
+                        type: entryType
+                    });
+                    
+                    // 内容検索
+                    if (filters.content && entryContent.toLowerCase().includes(filters.content.toLowerCase())) {
+                        hasMatch = true;
+                    }
+                } catch (e) {
+                    // パースエラーは無視
+                }
+            }
+            
+            if (entries.length === 0) continue;
+            
+            const conversationId = fileName.replace('.jsonl', '');
+            const startTime = entries[0]?.timestamp || '';
+            const endTime = entries[entries.length - 1]?.timestamp || '';
+            
+            // 日付フィルタリング
+            if (filters.dateFrom || filters.dateTo) {
+                const convStartDate = new Date(startTime);
+                const convEndDate = new Date(endTime);
+                
+                if (filters.dateFrom) {
+                    const fromDate = new Date(filters.dateFrom);
+                    fromDate.setHours(0, 0, 0, 0);
+                    if (convEndDate < fromDate) continue;
+                }
+                
+                if (filters.dateTo) {
+                    const toDate = new Date(filters.dateTo);
+                    toDate.setHours(23, 59, 59, 999);
+                    if (convStartDate > toDate) continue;
+                }
+            }
+            
+            // 内容フィルタがない場合は日付のみでマッチ
+            if (!filters.content || hasMatch) {
+                const preview = entries.slice(0, 3);
+                
+                allResults.push({
+                    conversationId,
+                    fileName,
+                    startTime,
+                    endTime,
+                    entriesCount: entries.length,
+                    preview
+                });
+            }
+        }
+        
+        // 統合されたファイルを除外
+        const filteredResults = this.filterConsolidatedConversations(allResults, projectPath);
+        
+        // 結果を日付順でソート
+        filteredResults.sort((a, b) => b.endTime.localeCompare(a.endTime));
+        
+        return filteredResults;
     }
     
     /**
