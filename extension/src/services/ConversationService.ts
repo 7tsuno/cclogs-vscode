@@ -18,8 +18,12 @@ interface LogEntry {
 }
 
 export class ConversationService {
-    // ファイル内容のキャッシュ（sessionId配列のみ保持）
-    private fileSessionIdCache = new Map<string, Set<string>>();
+    // 統合済みファイルのキャッシュ（プロジェクトパス -> 統合済みconversationIdのSet）
+    private consolidatedCache = new Map<string, Set<string>>();
+    
+    // ファイルのsessionIdキャッシュ（ファイルパス -> sessionIdのSet）
+    // 統合済みファイルは変更されないため、永続的にキャッシュ可能
+    private permanentSessionIdCache = new Map<string, Set<string>>();
 
     /**
      * 統合された会話をフィルタリングする
@@ -33,38 +37,57 @@ export class ConversationService {
         projectPath: string
     ): ConversationInfo[] {
         try {
-            // キャッシュをクリア（新しい処理の開始）
-            this.fileSessionIdCache.clear();
+            // キャッシュから既知の統合済みファイルを取得
+            const cachedConsolidated = this.consolidatedCache.get(projectPath) || new Set<string>();
             
-            // 1. 各ファイルのsessionIdを事前に収集
-            const fileSessionIds = this.collectAllSessionIds(conversations, projectPath);
+            // 既にキャッシュ済みの統合ファイルを最初に除外
+            const activeConversations = conversations.filter(conv => !cachedConsolidated.has(conv.conversationId));
             
-            // 2. 統合されたファイルを判定
-            const consolidatedFiles = new Set<string>();
+            // 全て除外済みの場合は早期リターン
+            if (activeConversations.length === 0) {
+                return activeConversations;
+            }
             
-            conversations.forEach(convA => {
+            // ファイル内容のキャッシュ（このメソッド実行中のみ有効）
+            const tempSessionIdCache = new Map<string, Set<string>>();
+            
+            // 1. アクティブな会話のsessionIdのみを収集（永続キャッシュも活用）
+            const fileSessionIds = this.collectAllSessionIds(activeConversations, projectPath, tempSessionIdCache);
+            
+            // 2. 新たに統合されたファイルを判定
+            const newConsolidatedFiles = new Set<string>();
+            
+            activeConversations.forEach(convA => {
                 const sessionIdA = convA.conversationId;
                 
                 // 他のファイルにこのsessionIdが含まれているかチェック
-                conversations.forEach(convB => {
+                activeConversations.forEach(convB => {
                     if (convA.conversationId === convB.conversationId) return;
                     
                     const sessionIdsInB = fileSessionIds.get(convB.conversationId);
                     if (sessionIdsInB && sessionIdsInB.has(sessionIdA)) {
                         // sessionIdAが他のファイルのJSONエントリに含まれている場合、古い方を除外
                         const older = convA.endTime < convB.endTime ? convA : convB;
-                        consolidatedFiles.add(older.conversationId);
+                        newConsolidatedFiles.add(older.conversationId);
+                        
+                        // 統合済みファイルのsessionIdを永続キャッシュに移動
+                        const olderPath = path.join(projectPath, older.fileName);
+                        if (tempSessionIdCache.has(olderPath)) {
+                            this.permanentSessionIdCache.set(olderPath, tempSessionIdCache.get(olderPath)!);
+                        }
                     }
                 });
             });
             
-            return conversations.filter(conv => !consolidatedFiles.has(conv.conversationId));
+            // キャッシュを更新（既存のキャッシュと新規の統合ファイルをマージ）
+            const allConsolidated = new Set([...cachedConsolidated, ...newConsolidatedFiles]);
+            this.consolidatedCache.set(projectPath, allConsolidated);
+            
+            // アクティブな会話から新たに統合されたものを除外
+            return activeConversations.filter(conv => !newConsolidatedFiles.has(conv.conversationId));
         } catch (error) {
             console.error('Consolidation filter error:', error);
             return conversations; // エラー時は元のリストを返す
-        } finally {
-            // メモリクリーンアップ
-            this.fileSessionIdCache.clear();
         }
     }
     
@@ -73,13 +96,14 @@ export class ConversationService {
      */
     private collectAllSessionIds(
         conversations: ConversationInfo[], 
-        projectPath: string
+        projectPath: string,
+        fileSessionIdCache: Map<string, Set<string>>
     ): Map<string, Set<string>> {
         const fileSessionIds = new Map<string, Set<string>>();
         
         conversations.forEach(conv => {
             const filePath = path.join(projectPath, conv.fileName);
-            const sessionIds = this.extractSessionIdsFromFile(filePath);
+            const sessionIds = this.extractSessionIdsFromFile(filePath, fileSessionIdCache);
             fileSessionIds.set(conv.conversationId, sessionIds);
         });
         
@@ -89,10 +113,18 @@ export class ConversationService {
     /**
      * ファイルからsessionIdを抽出（キャッシュ付き）
      */
-    private extractSessionIdsFromFile(filePath: string): Set<string> {
-        // キャッシュをチェック
-        if (this.fileSessionIdCache.has(filePath)) {
-            return this.fileSessionIdCache.get(filePath)!;
+    private extractSessionIdsFromFile(
+        filePath: string,
+        tempSessionIdCache: Map<string, Set<string>>
+    ): Set<string> {
+        // 永続キャッシュをチェック
+        if (this.permanentSessionIdCache.has(filePath)) {
+            return this.permanentSessionIdCache.get(filePath)!;
+        }
+        
+        // 一時キャッシュをチェック
+        if (tempSessionIdCache.has(filePath)) {
+            return tempSessionIdCache.get(filePath)!;
         }
         
         const sessionIds = new Set<string>();
@@ -116,9 +148,19 @@ export class ConversationService {
             console.debug(`Error reading file ${filePath}:`, error);
         }
         
-        // キャッシュに保存
-        this.fileSessionIdCache.set(filePath, sessionIds);
+        // 一時キャッシュに保存
+        tempSessionIdCache.set(filePath, sessionIds);
+        
+        // このファイルが統合済みとして判定されたら、永続キャッシュに移動される
         return sessionIds;
+    }
+    
+    /**
+     * キャッシュをクリアする（テストやデバッグ用）
+     */
+    public clearCache(): void {
+        this.consolidatedCache.clear();
+        this.permanentSessionIdCache.clear();
     }
 }
 

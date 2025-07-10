@@ -12,6 +12,7 @@ describe('ConversationService', () => {
 
     beforeEach(() => {
         service = new ConversationService();
+        service.clearCache(); // テストごとにキャッシュをクリア
         mockFiles = {};
         (fs.readFileSync as jest.Mock).mockImplementation((path: string) => {
             if (mockFiles[path]) {
@@ -23,6 +24,7 @@ describe('ConversationService', () => {
 
     afterEach(() => {
         jest.clearAllMocks();
+        service.clearCache(); // テスト後もキャッシュをクリア
     });
 
     // モックファイルを追加するヘルパー
@@ -216,6 +218,52 @@ describe('ConversationService', () => {
             const filtered = service.filterConsolidatedConversations(conversations, projectPath);
             assert.strictEqual(filtered.length, 1);
             assert.strictEqual(filtered[0].conversationId, 'session-b'); // 新しい方が残る
+        });
+
+        it('キャッシュが正しく機能し、2回目の呼び出しでファイル読み込みが削減される', () => {
+            // 統合された会話を設定
+            addMockFile(`${projectPath}/session-a.jsonl`, [
+                { timestamp: '2024-01-01T10:00:00Z', type: 'message', sessionId: 'session-a' }
+            ]);
+            addMockFile(`${projectPath}/session-b.jsonl`, [
+                { timestamp: '2024-01-01T11:00:00Z', type: 'message', sessionId: 'session-b' },
+                { timestamp: '2024-01-01T11:01:00Z', type: 'message', sessionId: 'session-a' }
+            ]);
+
+            const conversations: ConversationInfo[] = [
+                {
+                    conversationId: 'session-a',
+                    fileName: 'session-a.jsonl',
+                    startTime: '2024-01-01T10:00:00Z',
+                    endTime: '2024-01-01T10:30:00Z',
+                    entriesCount: 1
+                },
+                {
+                    conversationId: 'session-b',
+                    fileName: 'session-b.jsonl',
+                    startTime: '2024-01-01T11:00:00Z',
+                    endTime: '2024-01-01T11:30:00Z',
+                    entriesCount: 2
+                }
+            ];
+
+            // 1回目の呼び出し
+            const filtered1 = service.filterConsolidatedConversations(conversations, projectPath);
+            assert.strictEqual(filtered1.length, 1);
+            assert.strictEqual(filtered1[0].conversationId, 'session-b');
+            
+            // readFileSyncの呼び出し回数を記録
+            const callCountAfterFirst = (fs.readFileSync as jest.Mock).mock.calls.length;
+            
+            // 2回目の呼び出し（同じデータ）
+            const filtered2 = service.filterConsolidatedConversations(conversations, projectPath);
+            assert.strictEqual(filtered2.length, 1);
+            assert.strictEqual(filtered2[0].conversationId, 'session-b');
+            
+            // 2回目はキャッシュが効いているため、readFileSyncの呼び出しが少なくなるはず
+            const callCountAfterSecond = (fs.readFileSync as jest.Mock).mock.calls.length;
+            assert.ok(callCountAfterSecond < callCountAfterFirst * 2, 
+                `Second call should use cache. First: ${callCountAfterFirst}, Second: ${callCountAfterSecond}`);
         });
     });
 });
