@@ -622,5 +622,71 @@ describe('ConversationService', () => {
             assert.strictEqual(result.length, 1);
             assert.strictEqual(result[0].conversationId, 'session-c');
         });
+
+        it('大量のファイルでも効率的に検索できる', async () => {
+            const projectId = 'test-project';
+            const projectPath = `${mockHomedir}/.claude/projects/${projectId}`;
+            
+            (fs.existsSync as jest.Mock).mockReturnValue(true);
+            
+            // 100個のファイルを生成
+            const fileNames: string[] = [];
+            for (let i = 0; i < 100; i++) {
+                const fileName = `session-${i}.jsonl`;
+                fileNames.push(fileName);
+                
+                // 10ファイルに1つの割合でマッチするコンテンツを含む
+                const content = i % 10 === 0 ? 'Special content to find' : 'Regular content';
+                addMockFile(`${projectPath}/${fileName}`, [
+                    { 
+                        timestamp: `2024-01-01T${String(i).padStart(2, '0')}:00:00Z`, 
+                        type: 'message', 
+                        message: { role: 'user', content }
+                    }
+                ]);
+            }
+            
+            (fs.readdirSync as jest.Mock).mockReturnValue(fileNames);
+            
+            const startTime = Date.now();
+            const result = await service.searchLogs(projectId, { content: 'special' });
+            const duration = Date.now() - startTime;
+            
+            // 10ファイルがマッチするはず
+            assert.strictEqual(result.length, 10);
+            
+            // パフォーマンスチェック（100ms以内に完了することを期待）
+            assert.ok(duration < 100, `Search took ${duration}ms, expected < 100ms`);
+        });
+
+        it('日付フィルターのみの場合は検索用の追加読み込みをしない', async () => {
+            const projectId = 'test-project';
+            const projectPath = `${mockHomedir}/.claude/projects/${projectId}`;
+            
+            (fs.existsSync as jest.Mock).mockReturnValue(true);
+            (fs.readdirSync as jest.Mock).mockReturnValue(['session-1.jsonl', 'session-2.jsonl']);
+            
+            addMockFile(`${projectPath}/session-1.jsonl`, [
+                { timestamp: '2024-01-01T10:00:00Z', type: 'message', message: { role: 'user', content: 'Test' } }
+            ]);
+            
+            addMockFile(`${projectPath}/session-2.jsonl`, [
+                { timestamp: '2024-01-15T10:00:00Z', type: 'message', message: { role: 'user', content: 'Test' } }
+            ]);
+            
+            // readFileSyncのモックをスパイ
+            const readFileSyncSpy = fs.readFileSync as jest.Mock;
+            readFileSyncSpy.mockClear();
+            
+            // 日付フィルターのみで検索
+            await service.searchLogs(projectId, { dateFrom: '2024-01-10' });
+            
+            // getProjectLogsでの読み込み（プレビュー生成用）と
+            // filterConsolidatedConversationsでの統合チェック用の読み込みのみ
+            // 内容検索用の追加読み込みは発生しない
+            const callCount = readFileSyncSpy.mock.calls.length;
+            // 各ファイル2回ずつ（プレビュー用と統合チェック用）= 4回
+            assert.strictEqual(callCount, 4);
+        });
     });
 });

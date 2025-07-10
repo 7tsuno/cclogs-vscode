@@ -406,20 +406,87 @@ export class ConversationService {
             throw new Error('プロジェクトが見つかりません');
         }
 
-        const files = fs.readdirSync(projectPath);
-        const jsonlFiles = files.filter(file => file.endsWith('.jsonl'));
-        const allResults: ConversationInfo[] = [];
+        // 1. まず全ファイルの基本情報を取得（統合されたファイルを除外する前）
+        const allConversations = await this.getProjectLogs(projectId);
         
-        // 各ログファイルを検索
-        for (const fileName of jsonlFiles) {
-            const filePath = path.join(projectPath, fileName);
+        // 2. 検索が必要ない場合（フィルターなし）は早期リターン
+        if (!filters.content && !filters.dateFrom && !filters.dateTo) {
+            return allConversations;
+        }
+        
+        // 3. 日付フィルターのみの場合は、ファイル内容を読まずにフィルタリング
+        if (!filters.content && (filters.dateFrom || filters.dateTo)) {
+            return this.filterByDate(allConversations, filters);
+        }
+        
+        // 4. 内容検索が必要な場合は、並列でファイルを処理
+        const searchTasks = allConversations.map(async (conversation) => {
+            // 日付フィルターで事前除外
+            if (!this.matchesDateFilter(conversation, filters)) {
+                return null;
+            }
+            
+            // ファイル内容を検索
+            const matches = await this.searchInFile(
+                path.join(projectPath, conversation.fileName),
+                filters.content || ''
+            );
+            
+            return matches ? conversation : null;
+        });
+        
+        // 並列実行と結果のフィルタリング
+        const results = await Promise.all(searchTasks);
+        const filteredResults = results.filter((conv): conv is ConversationInfo => conv !== null);
+        
+        // 結果を日付順でソート
+        filteredResults.sort((a, b) => b.endTime.localeCompare(a.endTime));
+        
+        return filteredResults;
+    }
+    
+    /**
+     * 日付フィルターでフィルタリング
+     */
+    private filterByDate(conversations: ConversationInfo[], filters: SearchFilters): ConversationInfo[] {
+        return conversations.filter(conv => this.matchesDateFilter(conv, filters));
+    }
+    
+    /**
+     * 会話が日付フィルターに一致するかチェック
+     */
+    private matchesDateFilter(conversation: ConversationInfo, filters: SearchFilters): boolean {
+        if (!filters.dateFrom && !filters.dateTo) {
+            return true;
+        }
+        
+        const convStartDate = new Date(conversation.startTime);
+        const convEndDate = new Date(conversation.endTime);
+        
+        if (filters.dateFrom) {
+            const fromDate = new Date(filters.dateFrom);
+            fromDate.setHours(0, 0, 0, 0);
+            if (convEndDate < fromDate) return false;
+        }
+        
+        if (filters.dateTo) {
+            const toDate = new Date(filters.dateTo);
+            toDate.setHours(23, 59, 59, 999);
+            if (convStartDate > toDate) return false;
+        }
+        
+        return true;
+    }
+    
+    /**
+     * ファイル内でキーワードを検索
+     */
+    private async searchInFile(filePath: string, keyword: string): Promise<boolean> {
+        try {
             const content = fs.readFileSync(filePath, 'utf-8');
             const lines = content.trim().split('\n').filter(line => line);
+            const lowerKeyword = keyword.toLowerCase();
             
-            let hasMatch = false;
-            const entries: any[] = [];
-            
-            // ログエントリをパース
             for (const line of lines) {
                 try {
                     const entry = JSON.parse(line);
@@ -427,92 +494,45 @@ export class ConversationService {
                     // メタ情報は除外
                     if (entry.isMeta) continue;
                     
-                    // エントリの内容を取得
-                    let entryContent = '';
-                    const entryTimestamp = entry.timestamp || '';
-                    let entryType = entry.type || 'unknown';
-                    
-                    if (entry.message) {
-                        entryType = entry.message.role || entry.type || 'unknown';
-                        if (typeof entry.message.content === 'string') {
-                            entryContent = entry.message.content;
-                        } else if (Array.isArray(entry.message.content)) {
-                            entryContent = entry.message.content
-                                .filter((c: any) => c.type === 'text')
-                                .map((c: any) => c.text || '')
-                                .join('\n');
-                        }
-                    } else if (entry.toolUseResult) {
-                        entryType = 'tool_result';
-                        entryContent = typeof entry.toolUseResult === 'string'
-                            ? entry.toolUseResult
-                            : JSON.stringify(entry.toolUseResult);
-                    } else if (entry.summary) {
-                        entryType = 'summary';
-                        entryContent = entry.summary;
+                    // エントリの内容を取得して検索
+                    const entryContent = this.extractEntryContent(entry);
+                    if (entryContent.toLowerCase().includes(lowerKeyword)) {
+                        return true;
                     }
-                    
-                    entries.push({
-                        content: entryContent,
-                        timestamp: entryTimestamp,
-                        type: entryType
-                    });
-                    
-                    // 内容検索
-                    if (filters.content && entryContent.toLowerCase().includes(filters.content.toLowerCase())) {
-                        hasMatch = true;
-                    }
-                } catch (e) {
+                } catch {
                     // パースエラーは無視
                 }
             }
             
-            if (entries.length === 0) continue;
-            
-            const conversationId = fileName.replace('.jsonl', '');
-            const startTime = entries[0]?.timestamp || '';
-            const endTime = entries[entries.length - 1]?.timestamp || '';
-            
-            // 日付フィルタリング
-            if (filters.dateFrom || filters.dateTo) {
-                const convStartDate = new Date(startTime);
-                const convEndDate = new Date(endTime);
-                
-                if (filters.dateFrom) {
-                    const fromDate = new Date(filters.dateFrom);
-                    fromDate.setHours(0, 0, 0, 0);
-                    if (convEndDate < fromDate) continue;
-                }
-                
-                if (filters.dateTo) {
-                    const toDate = new Date(filters.dateTo);
-                    toDate.setHours(23, 59, 59, 999);
-                    if (convStartDate > toDate) continue;
-                }
+            return false;
+        } catch (error) {
+            console.debug(`Error searching in file ${filePath}:`, error);
+            return false;
+        }
+    }
+    
+    /**
+     * エントリから表示用のコンテンツを抽出
+     */
+    private extractEntryContent(entry: any): string {
+        if (entry.message) {
+            if (typeof entry.message.content === 'string') {
+                return entry.message.content;
+            } else if (Array.isArray(entry.message.content)) {
+                return entry.message.content
+                    .filter((c: any) => c.type === 'text')
+                    .map((c: any) => c.text || '')
+                    .join('\n');
             }
-            
-            // 内容フィルタがない場合は日付のみでマッチ
-            if (!filters.content || hasMatch) {
-                const preview = entries.slice(0, 3);
-                
-                allResults.push({
-                    conversationId,
-                    fileName,
-                    startTime,
-                    endTime,
-                    entriesCount: entries.length,
-                    preview
-                });
-            }
+        } else if (entry.toolUseResult) {
+            return typeof entry.toolUseResult === 'string'
+                ? entry.toolUseResult
+                : JSON.stringify(entry.toolUseResult);
+        } else if (entry.summary) {
+            return entry.summary;
         }
         
-        // 統合されたファイルを除外
-        const filteredResults = this.filterConsolidatedConversations(allResults, projectPath);
-        
-        // 結果を日付順でソート
-        filteredResults.sort((a, b) => b.endTime.localeCompare(a.endTime));
-        
-        return filteredResults;
+        return '';
     }
     
     /**
