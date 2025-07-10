@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { conversationService } from './services/ConversationService';
+import { projectService } from './services/ProjectService';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('Claude Code Logs extension is now active!');
@@ -88,52 +89,7 @@ class ClaudeLogsPanel {
 
     private async _getProjects() {
         try {
-            const claudeDir = path.join(os.homedir(), '.claude', 'projects');
-            
-            if (!fs.existsSync(claudeDir)) {
-                this._panel.webview.postMessage({ 
-                    command: 'projectsResponse', 
-                    error: 'Claudeプロジェクトディレクトリが見つかりません' 
-                });
-                return;
-            }
-
-            const entries = fs.readdirSync(claudeDir, { withFileTypes: true });
-            const projectDirs = entries.filter(entry => entry.isDirectory());
-            
-            const projects = await Promise.all(
-                projectDirs.map(async (dir) => {
-                    const projectPath = path.join(claudeDir, dir.name);
-                    const files = fs.readdirSync(projectPath);
-                    const jsonlFiles = files.filter(file => file.endsWith('.jsonl'));
-                    
-                    let latestTime = null;
-                    if (jsonlFiles.length > 0) {
-                        const stats = await Promise.all(
-                            jsonlFiles.map(async (file) => {
-                                const filePath = path.join(projectPath, file);
-                                const stat = fs.statSync(filePath);
-                                return stat.mtime;
-                            })
-                        );
-                        latestTime = new Date(Math.max(...stats.map(d => d.getTime())));
-                    }
-                    
-                    return {
-                        id: dir.name,
-                        name: dir.name.replace(/-/g, '/'),
-                        conversationCount: jsonlFiles.length,
-                        lastModified: latestTime ? latestTime.toISOString() : null
-                    };
-                })
-            );
-            
-            projects.sort((a, b) => {
-                if (!a.lastModified) return 1;
-                if (!b.lastModified) return -1;
-                return b.lastModified.localeCompare(a.lastModified);
-            });
-
+            const projects = await projectService.getProjects();
             this._panel.webview.postMessage({ 
                 command: 'projectsResponse', 
                 projects 
