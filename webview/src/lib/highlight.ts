@@ -22,18 +22,18 @@ export function scrollToMatch(element: HTMLElement, matchIndex: number): void {
   const marks = element.querySelectorAll('mark');
   
   if (marks.length > 0 && matchIndex >= 0 && matchIndex < marks.length) {
-    marks[matchIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // Chrome風に即座にスクロール（アニメーションなし）
+    marks[matchIndex].scrollIntoView({ behavior: 'auto', block: 'center' });
     
-    // 現在のマッチをハイライト
+    // 現在のマッチをハイライト（Chrome風のオレンジ色）
     marks.forEach((mark, index) => {
+      const markEl = mark as HTMLElement;
       if (index === matchIndex) {
-        mark.classList.add('current-match');
-        mark.classList.add('bg-orange-400');
-        mark.classList.remove('bg-yellow-300');
+        markEl.style.backgroundColor = 'rgb(255, 150, 50)';
+        markEl.style.color = 'black';
       } else {
-        mark.classList.remove('current-match');
-        mark.classList.remove('bg-orange-400');
-        mark.classList.add('bg-yellow-300');
+        markEl.style.backgroundColor = 'rgb(255, 212, 0)';
+        markEl.style.color = 'black';
       }
     });
   }

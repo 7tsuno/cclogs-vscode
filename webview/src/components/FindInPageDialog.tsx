@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { X, ChevronUp, ChevronDown } from "lucide-react";
@@ -24,6 +24,7 @@ export function FindInPageDialog({
   const [isComposing, setIsComposing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (isOpen && inputRef.current) {
@@ -52,11 +53,38 @@ export function FindInPageDialog({
     };
   }, [isOpen]);
 
+  // クリーンアップ
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+
+  // デバウンスされた検索実行
+  const debouncedSearch = useCallback((value: string) => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    // 空文字の場合は即座に実行（クリア処理のため）
+    if (!value) {
+      onHighlight(value);
+      return;
+    }
+
+    // デバウンス処理（300ms）
+    debounceTimerRef.current = setTimeout(() => {
+      onHighlight(value);
+    }, 300);
+  }, [onHighlight]);
+
   const handleSearchChange = (value: string) => {
     setSearchText(value);
     // 日本語入力中でなければ検索実行
     if (!isComposing) {
-      onHighlight(value);
+      debouncedSearch(value);
     }
   };
 
@@ -68,10 +96,13 @@ export function FindInPageDialog({
     setIsComposing(false);
     // 変換確定時に検索を実行
     const value = e.currentTarget.value;
-    onHighlight(value);
+    debouncedSearch(value);
   };
 
   const handleClose = () => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
     setSearchText("");
     onHighlight("");
     onClose();
@@ -106,35 +137,37 @@ export function FindInPageDialog({
   return (
     <div
       ref={dialogRef}
-      className="fixed top-4 right-4 z-50 bg-popover border rounded-lg shadow-lg p-3 animate-in slide-in-from-top-2 fade-in duration-200"
-      style={{ minWidth: "320px" }}
+      className="fixed top-4 right-4 z-50 bg-popover border rounded-md shadow-lg p-2"
+      style={{ minWidth: "300px", backgroundColor: "var(--vscode-editorWidget-background)", borderColor: "var(--vscode-editorWidget-border)" }}
     >
       <div className="flex items-center gap-2">
         <Input
           ref={inputRef}
           type="text"
-          placeholder="Search..."
+          placeholder="Find"
           value={searchText}
           onChange={(e) => handleSearchChange(e.target.value)}
           onCompositionStart={handleCompositionStart}
           onCompositionEnd={handleCompositionEnd}
           onKeyDown={handleKeyDown}
-          className="flex-1 h-8"
+          className="flex-1 h-7 text-sm"
         />
-        <div className="flex items-center gap-1 text-sm text-muted-foreground min-w-[60px]">
-          {matchCount > 0 && (
+        <div className="flex items-center gap-1 text-xs text-muted-foreground min-w-[50px] justify-end">
+          {matchCount > 0 ? (
             <>
               {currentMatch}/{matchCount}
             </>
-          )}
+          ) : searchText ? (
+            <span>0 results</span>
+          ) : null}
         </div>
         <Button
           variant="ghost"
           size="sm"
           onClick={handlePrev}
           disabled={matchCount === 0}
-          title="Previous (Shift+Enter)"
-          className="h-8 w-8 p-0"
+          title="Previous match (Shift+Enter)"
+          className="h-7 w-7 p-0"
         >
           <ChevronUp className="h-4 w-4" />
         </Button>
@@ -143,8 +176,8 @@ export function FindInPageDialog({
           size="sm"
           onClick={handleNext}
           disabled={matchCount === 0}
-          title="Next (Enter)"
-          className="h-8 w-8 p-0"
+          title="Next match (Enter)"
+          className="h-7 w-7 p-0"
         >
           <ChevronDown className="h-4 w-4" />
         </Button>
@@ -152,8 +185,8 @@ export function FindInPageDialog({
           variant="ghost"
           size="sm"
           onClick={handleClose}
-          title="Close (Esc)"
-          className="h-8 w-8 p-0"
+          title="Close"
+          className="h-7 w-7 p-0"
         >
           <X className="h-4 w-4" />
         </Button>

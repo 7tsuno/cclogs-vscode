@@ -45,6 +45,8 @@ export default function ConversationDetailPage() {
     new Set()
   );
   const [copiedEntryId, setCopiedEntryId] = useState<string | null>(null);
+  const lastSearchTermRef = useRef<string>("");
+  const highlightedNodesRef = useRef<Set<Node>>(new Set());
 
   useEffect(() => {
     if (params.id && params.projectId) {
@@ -193,31 +195,28 @@ export default function ConversationDetailPage() {
   const performHighlight = (text: string, isNewSearch: boolean) => {
     if (!contentRef.current) return 0;
 
-    // すべての要素から既存のハイライトを削除
-    // まずmark要素を持つspan要素を探す
-    const allSpans = contentRef.current.querySelectorAll("span");
-    allSpans.forEach((span) => {
-      if (span.querySelector("mark")) {
-        const parent = span.parentNode;
-        if (parent) {
-          const textNode = document.createTextNode(span.textContent || "");
-          parent.replaceChild(textNode, span);
-        }
-      }
-    });
+    // 検索語が前回と同じ場合はスキップ
+    if (text === lastSearchTermRef.current && text !== "") {
+      return totalMatches;
+    }
 
-    // 残っているmark要素も削除
-    const existingMarks = contentRef.current.querySelectorAll("mark");
-    existingMarks.forEach((mark) => {
-      const parent = mark.parentNode;
-      if (parent) {
-        parent.replaceChild(
-          document.createTextNode(mark.textContent || ""),
-          mark
-        );
-        parent.normalize();
-      }
-    });
+    // 既存のハイライトを効率的に削除
+    if (highlightedNodesRef.current.size > 0) {
+      highlightedNodesRef.current.forEach((node) => {
+        if (node.parentNode && node.nodeType === Node.ELEMENT_NODE) {
+          const elem = node as Element;
+          if (elem.tagName === 'SPAN' && elem.querySelector('mark') && elem.parentNode) {
+            const textContent = elem.textContent || "";
+            const textNode = document.createTextNode(textContent);
+            elem.parentNode.replaceChild(textNode, elem);
+          }
+        }
+      });
+      
+      highlightedNodesRef.current.clear();
+    }
+
+    lastSearchTermRef.current = text;
 
     if (!text) {
       setTotalMatches(0);
@@ -255,26 +254,55 @@ export default function ConversationDetailPage() {
       "gi"
     );
 
-    textNodes.forEach((textNode) => {
-      const matches = textNode.textContent?.match(regex);
-      if (matches && matches.length > 0) {
-        totalMatches += matches.length;
-        const span = document.createElement("span");
-        span.innerHTML = textNode.textContent!.replace(
-          regex,
-          '<mark class="bg-yellow-300 text-black">$1</mark>'
-        );
-        textNode.parentNode?.replaceChild(span, textNode);
+    // インクリメンタル処理の準備：ノードをバッチで処理
+    let totalMatchesCount = 0;
+    const batchSize = 50; // 一度に処理するノード数
+    const processBatch = (startIndex: number) => {
+      const endIndex = Math.min(startIndex + batchSize, textNodes.length);
+      
+      for (let i = startIndex; i < endIndex; i++) {
+        const textNode = textNodes[i];
+        const matches = textNode.textContent?.match(regex);
+        if (matches && matches.length > 0) {
+          totalMatchesCount += matches.length;
+          const span = document.createElement("span");
+          span.innerHTML = textNode.textContent!.replace(
+            regex,
+            '<mark style="background-color: rgb(255, 212, 0); color: black; padding: 0 1px; border-radius: 2px;">$1</mark>'
+          );
+          if (textNode.parentNode) {
+            textNode.parentNode.replaceChild(span, textNode);
+            highlightedNodesRef.current.add(span);
+          }
+        }
       }
-    });
-
-    setTotalMatches(totalMatches);
-    // 新しい検索の場合のみインデックスをリセット
-    if (isNewSearch) {
-      setCurrentMatchIndex(totalMatches > 0 ? 0 : -1);
-      // 初回スクロールはuseEffectに任せる（折りたたみ展開を待つため）
+      
+      // 次のバッチを非同期で処理
+      if (endIndex < textNodes.length) {
+        // requestIdleCallbackが使用可能な場合は使用、そうでなければrequestAnimationFrame
+        if ('requestIdleCallback' in window) {
+          (window as any).requestIdleCallback(() => processBatch(endIndex), { timeout: 50 });
+        } else {
+          requestAnimationFrame(() => processBatch(endIndex));
+        }
+      } else {
+        // 全ての処理が完了
+        setTotalMatches(totalMatchesCount);
+        if (isNewSearch) {
+          setCurrentMatchIndex(totalMatchesCount > 0 ? 0 : -1);
+        }
+      }
+    };
+    
+    // バッチ処理を開始
+    if (textNodes.length > 0) {
+      processBatch(0);
+    } else {
+      setTotalMatches(0);
+      setCurrentMatchIndex(-1);
     }
-    return totalMatches;
+
+    return totalMatchesCount;
   };
 
   const handleNavigate = (direction: "next" | "prev") => {
