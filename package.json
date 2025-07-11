@@ -2,7 +2,7 @@
   "name": "claude-code-logs",
   "displayName": "Claude Code Logs Viewer",
   "description": "Claude Codeの会話ログを見やすく表示するVS Code拡張",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "publisher": "7tsuno",
   "icon": "images/cclv.png",
   "engines": {
