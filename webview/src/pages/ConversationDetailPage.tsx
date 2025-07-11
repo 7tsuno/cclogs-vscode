@@ -17,6 +17,8 @@ import {
   Wrench,
   Terminal,
   Search,
+  FileJson,
+  Copy,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { api } from "../lib/api";
@@ -39,30 +41,39 @@ export default function ConversationDetailPage() {
   const contentRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [expandedJsonEntries, setExpandedJsonEntries] = useState<Set<string>>(
+    new Set()
+  );
+  const [copiedEntryId, setCopiedEntryId] = useState<string | null>(null);
 
   useEffect(() => {
     if (params.id && params.projectId) {
       fetchConversation(params.projectId, params.id);
-      
+
       // ファイル更新リスナーの登録
       const unsubscribe = api.onFileUpdate((data) => {
         // 現在表示中の会話のファイルが更新された場合
-        if (data.projectId === params.projectId && 
-            params.id && data.fileName.includes(params.id)) {
+        if (
+          data.projectId === params.projectId &&
+          params.id &&
+          data.fileName.includes(params.id)
+        ) {
           fetchConversation(params.projectId, params.id);
         }
-        
+
         // 新しいファイルが現在表示中のファイルから派生した場合、自動遷移
         // eventTypeをchangeに変更（ファイルが完全に書き込まれた後に検出されるため）
-        if (data.eventType === 'change' && 
-            data.derivedFromFile === params.id && 
-            data.projectId === params.projectId) {
-          const newConversationId = data.fileName.replace('.jsonl', '');
+        if (
+          data.eventType === "change" &&
+          data.derivedFromFile === params.id &&
+          data.projectId === params.projectId
+        ) {
+          const newConversationId = data.fileName.replace(".jsonl", "");
           // React Routerで新しいファイルに遷移
           window.location.hash = `#/project/${params.projectId}/conversation/${newConversationId}`;
         }
       });
-      
+
       return () => {
         unsubscribe();
       };
@@ -73,12 +84,13 @@ export default function ConversationDetailPage() {
     try {
       const data = await api.getLogDetail(projectId, id);
       setConversation(data);
-      
+
       // 自動スクロールが有効な場合は最下部へ
       if (autoScroll && scrollAreaRef.current) {
         setTimeout(() => {
           if (scrollAreaRef.current) {
-            scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+            scrollAreaRef.current.scrollTop =
+              scrollAreaRef.current.scrollHeight;
           }
         }, 100);
       }
@@ -129,6 +141,28 @@ export default function ConversationDetailPage() {
       }
     } catch (err) {
       // エラーは静かに処理
+    }
+  };
+
+  const toggleJsonView = (entryId: string) => {
+    setExpandedJsonEntries((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(entryId)) {
+        newSet.delete(entryId);
+      } else {
+        newSet.add(entryId);
+      }
+      return newSet;
+    });
+  };
+
+  const copyJsonToClipboard = async (entryId: string, json: string) => {
+    try {
+      await navigator.clipboard.writeText(json);
+      setCopiedEntryId(entryId);
+      setTimeout(() => setCopiedEntryId(null), 2000);
+    } catch (err) {
+      console.error("Failed to copy JSON:", err);
     }
   };
 
@@ -591,8 +625,8 @@ export default function ConversationDetailPage() {
         </div>
       </div>
 
-      <div 
-        className="h-[calc(100vh-180px)] overflow-y-auto" 
+      <div
+        className="h-[calc(100vh-180px)] overflow-y-auto"
         ref={scrollAreaRef}
       >
         <div className="space-y-4 px-2 pb-4" ref={contentRef}>
@@ -645,9 +679,9 @@ export default function ConversationDetailPage() {
                   <Card
                     className={`${
                       isRight ? "bg-primary/5" : "bg-secondary/5"
-                    } overflow-hidden py-3`}
+                    } overflow-hidden pt-3`}
                   >
-                    <CardContent className="px-4">
+                    <CardContent className="px-4 pb-3">
                       <div className="break-words">
                         {renderContent(
                           entry.content,
@@ -657,6 +691,75 @@ export default function ConversationDetailPage() {
                         )}
                       </div>
                     </CardContent>
+                    {/* JSON表示ボタンとコンテンツ */}
+                    {entry.metadata && (
+                      <div className="border-t">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="w-full justify-start p-2 h-auto font-normal hover:bg-secondary/50"
+                          onClick={() => toggleJsonView(entry.id)}
+                        >
+                          {expandedJsonEntries.has(entry.id) ? (
+                            <ChevronUp className="h-3 w-3 mr-1" />
+                          ) : (
+                            <ChevronDown className="h-3 w-3 mr-1" />
+                          )}
+                          <FileJson className="h-3 w-3 mr-1" />
+                          <span className="text-xs text-muted-foreground">
+                            {expandedJsonEntries.has(entry.id)
+                              ? "Hide JSON"
+                              : "View JSON"}
+                          </span>
+                        </Button>
+                        {expandedJsonEntries.has(entry.id) && (
+                          <div className="p-3 bg-muted/30">
+                            <div className="flex justify-between items-center mb-2">
+                              <span className="text-xs text-muted-foreground">
+                                JSON Data
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-2"
+                                onClick={() =>
+                                  copyJsonToClipboard(
+                                    entry.id,
+                                    JSON.stringify(entry.metadata, null, 2)
+                                  )
+                                }
+                              >
+                                {copiedEntryId === entry.id ? (
+                                  <>
+                                    <svg
+                                      className="h-3 w-3 mr-1"
+                                      xmlns="http://www.w3.org/2000/svg"
+                                      viewBox="0 0 24 24"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth="2"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                    >
+                                      <polyline points="20 6 9 17 4 12"></polyline>
+                                    </svg>
+                                    <span className="text-xs">Copied!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="h-3 w-3 mr-1" />
+                                    <span className="text-xs">Copy</span>
+                                  </>
+                                )}
+                              </Button>
+                            </div>
+                            <pre className="text-xs font-mono overflow-x-auto bg-background/50 p-2 rounded">
+                              {JSON.stringify(entry.metadata, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </Card>
                 </div>
               </div>
