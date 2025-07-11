@@ -1,9 +1,17 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
-import * as fs from 'fs';
-import * as os from 'os';
 import { conversationService } from './services/ConversationService';
 import { projectService } from './services/ProjectService';
+import { TerminalService } from './services/TerminalService';
+import { WebviewService } from './services/WebviewService';
+import { FileWatcherService } from './services/FileWatcherService';
+import { vscodeTerminalProvider } from './services/adapters/VscodeTerminalProvider';
+import { vscodeUriProvider } from './services/adapters/VscodeUriProvider';
+import { vscodeFileWatcherProvider } from './services/adapters/VscodeFileWatcherProvider';
+
+// サービスのインスタンスを作成
+const terminalService = new TerminalService(vscodeTerminalProvider);
+const webviewService = new WebviewService(vscodeUriProvider);
+const fileWatcherService = new FileWatcherService(vscodeFileWatcherProvider);
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('Claude Code Logs extension is now active!');
@@ -24,8 +32,6 @@ class ClaudeLogsPanel {
     private readonly _panel: vscode.WebviewPanel;
     private readonly _extensionUri: vscode.Uri;
     private _disposables: vscode.Disposable[] = [];
-    private _fileWatcher: vscode.FileSystemWatcher | undefined;
-    private _updateTimer: NodeJS.Timeout | undefined;
 
     public static createOrShow(extensionUri: vscode.Uri) {
         const column = vscode.window.activeTextEditor
@@ -135,32 +141,11 @@ class ClaudeLogsPanel {
     }
 
     private async _executeInTerminal(command: string) {
-        try {
-            // アクティブなターミナルを取得、なければ新規作成
-            let terminal = vscode.window.activeTerminal;
-            if (!terminal) {
-                terminal = vscode.window.createTerminal('Claude Code');
-            }
-            
-            // ターミナルを表示
-            terminal.show();
-            
-            // コマンドを送信
-            terminal.sendText(command);
-            
-            // 成功メッセージを送信
-            this._panel.webview.postMessage({ 
-                command: 'terminalExecuteResponse', 
-                success: true,
-                message: 'コマンドをターミナルに送信しました'
-            });
-        } catch (error) {
-            this._panel.webview.postMessage({ 
-                command: 'terminalExecuteResponse', 
-                success: false,
-                error: 'ターミナルへの送信に失敗しました' 
-            });
-        }
+        const result = await terminalService.executeCommand(command);
+        this._panel.webview.postMessage({ 
+            command: 'terminalExecuteResponse', 
+            ...result
+        });
     }
 
     private async _searchLogs(projectId: string, filters: any) {
@@ -182,206 +167,30 @@ class ClaudeLogsPanel {
     private _update() {
         const webview = this._panel.webview;
         this._panel.title = 'Claude Code Logs';
-        this._panel.webview.html = this._getHtmlForWebview(webview);
+        this._panel.webview.html = webviewService.getHtmlContent(
+            { 
+                cspSource: webview.cspSource, 
+                asWebviewUri: (uri) => webview.asWebviewUri(vscode.Uri.file(uri.fsPath)).toString()
+            },
+            { fsPath: this._extensionUri.fsPath }
+        );
     }
 
-    private _getHtmlForWebview(webview: vscode.Webview) {
-        // 実際にビルドされたファイルを確認
-        const distPath = vscode.Uri.joinPath(this._extensionUri, 'webview', 'dist').fsPath;
-        const assetsPath = path.join(distPath, 'assets');
-        
-        // assetsディレクトリ内のファイルを動的に取得
-        let scriptFile = '';
-        let cssFile = '';
-        
-        if (fs.existsSync(assetsPath)) {
-            const files = fs.readdirSync(assetsPath);
-            scriptFile = files.find((file: string) => file.startsWith('index-') && file.endsWith('.js')) || '';
-            cssFile = files.find((file: string) => file.startsWith('index-') && file.endsWith('.css')) || '';
-        }
-        
-        const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'webview', 'dist', 'assets', scriptFile));
-        const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'webview', 'dist', 'assets', cssFile));
-
-        const nonce = getNonce();
-
-        return `<!DOCTYPE html>
-            <html lang="ja">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' 'unsafe-eval';">
-                <link href="${styleUri}" rel="stylesheet">
-                <title>Claude Code Logs</title>
-                <style>
-                    :root {
-                        --vscode-font-family: var(--vscode-font-family);
-                        --vscode-font-size: var(--vscode-font-size);
-                        --vscode-font-weight: var(--vscode-font-weight);
-                        
-                        /* VS Code theme colors */
-                        --background: var(--vscode-editor-background);
-                        --foreground: var(--vscode-editor-foreground);
-                        --border: var(--vscode-panel-border);
-                        --input: var(--vscode-input-background);
-                        --ring: var(--vscode-focusBorder);
-                        
-                        --primary: var(--vscode-button-background);
-                        --primary-foreground: var(--vscode-button-foreground);
-                        --secondary: var(--vscode-button-secondaryBackground);
-                        --secondary-foreground: var(--vscode-button-secondaryForeground);
-                        
-                        --muted: var(--vscode-textBlockQuote-background);
-                        --muted-foreground: var(--vscode-descriptionForeground);
-                        --accent: var(--vscode-list-hoverBackground);
-                        --accent-foreground: var(--vscode-list-hoverForeground);
-                        
-                        --card: var(--vscode-editor-background);
-                        --card-foreground: var(--vscode-editor-foreground);
-                        --popover: var(--vscode-quickInput-background);
-                        --popover-foreground: var(--vscode-quickInput-foreground);
-                        
-                        --destructive: var(--vscode-errorForeground);
-                        --destructive-foreground: var(--vscode-editor-background);
-                        
-                        /* Toast specific colors */
-                        --toast-background: var(--vscode-notifications-background);
-                        --toast-foreground: var(--vscode-notifications-foreground);
-                        --toast-border: var(--vscode-notifications-border);
-                        
-                        --radius: 0.5rem;
-                    }
-                    
-                    body {
-                        font-family: var(--vscode-font-family);
-                        font-size: var(--vscode-font-size);
-                        font-weight: var(--vscode-font-weight);
-                        background-color: var(--vscode-editor-background);
-                        color: var(--vscode-editor-foreground);
-                        margin: 0;
-                        padding: 0;
-                    }
-                </style>
-            </head>
-            <body>
-                <div id="root"></div>
-                <script nonce="${nonce}" type="module" src="${scriptUri}"></script>
-            </body>
-            </html>`;
-    }
 
     private _setupFileWatcher() {
-        const claudeProjectsPath = path.join(os.homedir(), '.claude', 'projects');
-        
-        // ファイルウォッチャーの作成
-        const pattern = new vscode.RelativePattern(claudeProjectsPath, '**/*.jsonl');
-        this._fileWatcher = vscode.workspace.createFileSystemWatcher(pattern);
-        
-        // デバウンス処理を行う関数
-        const debounceUpdate = (eventType: string, uri: vscode.Uri) => {
-            // 既存のタイマーをクリア
-            if (this._updateTimer) {
-                clearTimeout(this._updateTimer);
-            }
-            
-            // 500ms後に更新通知を送信
-            this._updateTimer = setTimeout(() => {
-                this._notifyUpdate(eventType, uri);
-            }, 500);
-        };
-        
-        // ファイル変更イベントのハンドラ
-        this._fileWatcher.onDidCreate(uri => debounceUpdate('create', uri));
-        this._fileWatcher.onDidChange(uri => debounceUpdate('change', uri));
-        this._fileWatcher.onDidDelete(uri => debounceUpdate('delete', uri));
-        
-        // Disposableに追加
-        this._disposables.push(this._fileWatcher);
-    }
-    
-    private _notifyUpdate(eventType: string, uri: vscode.Uri) {
-        // ファイルパスからプロジェクトIDを抽出
-        const pathParts = uri.fsPath.split(path.sep);
-        const projectsIndex = pathParts.indexOf('projects');
-        
-        if (projectsIndex >= 0 && projectsIndex < pathParts.length - 2) {
-            const projectId = pathParts[projectsIndex + 1];
-            const fileName = path.basename(uri.fsPath);
-            
-            
-            // ファイルが変更された場合、既存ファイルからの派生かチェック
-            let derivedFromFile: string | null = null;
-            if (eventType === 'change' && fileName.endsWith('.jsonl')) {
-                derivedFromFile = this._checkIfDerivedFile(projectId, fileName);
-                
-            }
-            
-            // Webviewに更新通知を送信
-            const message = {
-                command: 'fileUpdate',
-                eventType,
-                projectId,
-                fileName,
-                derivedFromFile
-            };
-            this._panel.webview.postMessage(message);
-        }
-    }
-    
-    private _checkIfDerivedFile(projectId: string, newFileName: string): string | null {
-        try {
-            const projectPath = path.join(os.homedir(), '.claude', 'projects', projectId);
-            const newFilePath = path.join(projectPath, newFileName);
-            
-            // 新しいファイルが存在しない場合は処理しない
-            if (!fs.existsSync(newFilePath)) {
-                return null;
-            }
-            
-            const newFileContent = fs.readFileSync(newFilePath, 'utf-8');
-            const newLines = newFileContent.trim().split('\n').filter(line => line);
-            
-            // 新しいファイルのJSONエントリから他のsessionIdを検索
-            const otherSessionIds = new Set<string>();
-            const currentSessionId = newFileName.replace('.jsonl', '');
-            
-            newLines.forEach(line => {
-                try {
-                    const entry = JSON.parse(line);
-                    if (entry.sessionId && entry.sessionId !== currentSessionId) {
-                        otherSessionIds.add(entry.sessionId);
-                    }
-                } catch {
-                    // JSONパースエラーは無視
-                }
-            });
-            
-            
-            // 他のファイルでこれらのsessionIdを持つファイルを検索
-            const files = fs.readdirSync(projectPath);
-            const jsonlFiles = files.filter(file => file.endsWith('.jsonl') && file !== newFileName);
-            
-            for (const sessionId of otherSessionIds) {
-                const sourceFile = jsonlFiles.find(file => file.replace('.jsonl', '') === sessionId);
-                if (sourceFile) {
-                    return sourceFile.replace('.jsonl', '');
-                }
-            }
-            
-            return null;
-        } catch (error) {
-            console.error('Error checking derived file:', error);
-            return null;
-        }
+        const stopWatching = fileWatcherService.startWatching((event) => {
+            this._panel.webview.postMessage(event);
+        });
+        // Disposableに変換
+        const disposable = { dispose: stopWatching };
+        this._disposables.push(disposable);
     }
 
     public dispose() {
         ClaudeLogsPanel.currentPanel = undefined;
 
-        // タイマーのクリア
-        if (this._updateTimer) {
-            clearTimeout(this._updateTimer);
-        }
+        // ファイル監視を停止
+        fileWatcherService.stopWatching();
 
         this._panel.dispose();
 
@@ -392,13 +201,4 @@ class ClaudeLogsPanel {
             }
         }
     }
-}
-
-function getNonce() {
-    let text = '';
-    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    for (let i = 0; i < 32; i++) {
-        text += possible.charAt(Math.floor(Math.random() * possible.length));
-    }
-    return text;
 }
